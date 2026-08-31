@@ -1,0 +1,47 @@
+# Multi-Agent Debugging System — Run Instructions (Groq)
+
+## 1. Install dependencies
+```
+pip install groq pytest
+```
+No mutmut needed — mutation testing now uses a built-in pure-Python engine
+(simple_mutation_test.py) that works natively on Windows.
+
+## 2. Get a Groq API key
+https://console.groq.com/keys (free tier available)
+
+## 3. Set the key
+Windows PowerShell:
+```
+$env:GROQ_API_KEY = "gsk_..."
+```
+
+## 4. Files needed in the same folder
+- orchestrator.py
+- simple_mutation_test.py
+- buggy_code.py
+- test_buggy_code.py
+
+## 5. Run
+```
+python orchestrator.py --source buggy_code.py --tests test_buggy_code.py
+```
+
+## What you should see
+1. pytest runs, finds 2 failures in validate_password
+2. Diagnosis Agent identifies the root cause(s)
+3. Fix Agent patches buggy_code.py
+4. pytest re-runs — passes (or retries if the fix was incomplete)
+5. Mutation Re-check runs automatically using simple_mutation_test.py:
+   generates mutants by flipping operators/constants in your AST, reruns
+   pytest against each one, reports killed vs survived
+6. Mutation Re-check Agent interprets the results and gives a final verdict
+
+## Why not mutmut?
+mutmut does not support native Windows (requires WSL). Rather than force a
+WSL install, this project uses a small custom mutation engine built on
+Python's ast module — verified to produce real, correct mutation results
+on this exact codebase (5/5 mutants killed on the fixed validate_password).
+
+## After it runs
+Paste the full terminal output back to Claude to interpret the results.

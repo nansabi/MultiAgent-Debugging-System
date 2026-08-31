@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Agent Debugger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:            #0a0d13;
+    --bg-raised:     #10141d;
+    --panel:         #12161f;
+    --panel-border:  #1e2430;
+    --hair:          #232a38;
+    --text:          #e8ebf1;
+    --text-dim:      #838ea3;
+    --text-faint:    #545e70;
+    --cyan:          #48c9d9;
+    --cyan-dim:      #1f4a52;
+    --amber:         #f0a742;
+    --amber-dim:     #4a3a1e;
+    --green:         #3ecf8e;
+    --green-dim:     #1c4335;
+    --red:           #f0685f;
+    --red-dim:       #4a2320;
+    --font-display:  'Space Grotesk', sans-serif;
+    --font-body:     'Inter', sans-serif;
+    --font-mono:     'JetBrains Mono', monospace;
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; margin:0; padding:0; }
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; }
+  }
+
+  body{
+    font-family:var(--font-body);
+    background:
+      radial-gradient(1100px 500px at 12% -10%, rgba(72,201,217,0.07), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(240,167,66,0.05), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    padding:40px 24px 80px;
+  }
+
+  .wrap{ max-width:1180px; margin:0 auto; }
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:24px;
+    flex-wrap:wrap;
+    margin-bottom:36px;
+    opacity:0;
+    animation:rise .6s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--cyan);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .eyebrow::before{
+    content:"";
+    width:6px; height:6px;
+    border-radius:50%;
+    background:var(--cyan);
+    box-shadow:0 0 0 3px var(--cyan-dim);
+  }
+  h1{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:32px;
+    letter-spacing:-0.01em;
+    margin-bottom:6px;
+  }
+  .subtitle{
+    color:var(--text-dim);
+    font-size:13.5px;
+    max-width:560px;
+    line-height:1.6;
+  }
+  .meta{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-faint);
+    text-align:right;
+    line-height:1.8;
+  }
+  .meta span{ color:var(--text-dim); }
+
+  /* ---------- Pipeline (signature element) ---------- */
+  .pipeline{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:14px;
+    padding:26px 32px;
+    margin-bottom:28px;
+    opacity:0;
+    animation:rise .6s cubic-bezier(.2,.8,.2,1) .08s forwards;
+  }
+  .pipeline-row{
+    display:flex;
+    align-items:center;
+  }
+  .stage{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+    width:150px;
+    flex-shrink:0;
+  }
+  .stage-node{
+    width:52px; height:52px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--bg-raised);
+    border:1.5px solid var(--hair);
+    color:var(--text-faint);
+    position:relative;
+    transition:border-color .35s ease, color .35s ease, background .35s ease;
+  }
+  .stage-node svg{ width:20px; height:20px; }
+  .stage-ring{
+    position:absolute;
+    inset:-6px;
+    border-radius:50%;
+    border:1.5px solid transparent;
+    opacity:0;
+    transition:opacity .35s ease;
+  }
+  .stage-label{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+    transition:color .35s ease;
+  }
+  .stage-sub{
+    font-size:10.5px;
+    color:var(--text-faint);
+    opacity:.7;
+  }
+  .connector{
+    flex:1;
+    height:1.5px;
+    background:var(--hair);
+    position:relative;
+    overflow:hidden;
+    margin:0 -4px;
+    top:-24px;
+  }
+  .connector::after{
+    content:"";
+    position:absolute;
+    top:0; left:-30%;
+    width:30%; height:100%;
+    background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity:0;
+  }
+  .connector.flowing::after{
+    opacity:1;
+    animation:flow 1.4s linear infinite;
+  }
+
+  .stage.active .stage-node{ border-color:var(--amber); color:var(--amber); background:var(--amber-dim); }
+  .stage.active .stage-ring{ opacity:1; border-color:var(--amber); animation:pulse-ring 1.4s ease-out infinite; }
+  .stage.active .stage-label{ color:var(--amber); }
+
+  .stage.done .stage-node{ border-color:var(--green); color:var(--green); background:var(--green-dim); }
+  .stage.done .stage-label{ color:var(--green); }
+
+  .stage.failed .stage-node{ border-color:var(--red); color:var(--red); background:var(--red-dim); }
+  .stage.failed .stage-label{ color:var(--red); }
+
+  @keyframes pulse-ring{
+    0%{ transform:scale(0.85); opacity:.9; }
+    100%{ transform:scale(1.25); opacity:0; }
+  }
+  @keyframes flow{
+    0%{ left:-30%; }
+    100%{ left:100%; }
+  }
+
+  /* ---------- Editors ---------- */
+  .grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+    margin-bottom:20px;
+  }
+  .editor{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    overflow:hidden;
+    opacity:0;
+    animation:rise .6s cubic-bezier(.2,.8,.2,1) .16s forwards;
+    transition:border-color .25s ease, box-shadow .25s ease;
+  }
+  .editor:nth-child(2){ animation-delay:.22s; }
+  .editor:focus-within{
+    border-color:#2c3d47;
+    box-shadow:0 0 0 3px rgba(72,201,217,0.08);
+  }
+  .editor-bar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:11px 14px;
+    border-bottom:1px solid var(--panel-border);
+    background:var(--bg-raised);
+  }
+  .dot{ width:8px; height:8px; border-radius:50%; }
+  .dot.r{ background:#5a4247; } .dot.y{ background:#5a5342; } .dot.g{ background:#3f5a4a; }
+  .editor-title{
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+    margin-left:4px;
+  }
+  textarea{
+    width:100%;
+    height:300px;
+    display:block;
+    font-family:var(--font-mono);
+    font-size:12.5px;
+    line-height:1.6;
+    padding:16px;
+    border:none;
+    background:transparent;
+    color:var(--text);
+    resize:vertical;
+  }
+  textarea:focus{ outline:none; }
+  textarea::placeholder{ color:var(--text-faint); }
+
+  /* ---------- Controls ---------- */
+  .controls{
+    display:flex;
+    align-items:center;
+    gap:16px;
+    margin-bottom:22px;
+    opacity:0;
+    animation:rise .6s cubic-bezier(.2,.8,.2,1) .28s forwards;
+  }
+  button{
+    position:relative;
+    padding:11px 26px;
+    background:var(--cyan);
+    color:#06171a;
+    border:none;
+    border-radius:8px;
+    font-family:var(--font-display);
+    font-size:14px;
+    font-weight:600;
+    letter-spacing:.01em;
+    cursor:pointer;
+    transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+    box-shadow:0 0 0 rgba(72,201,217,0);
+  }
+  button:hover:not(:disabled){
+    background:#5fd6e5;
+    box-shadow:0 4px 18px rgba(72,201,217,0.25);
+    transform:translateY(-1px);
+  }
+  button:active:not(:disabled){ transform:translateY(0); }
+  button:disabled{ background:#2a3540; color:var(--text-faint); cursor:not-allowed; }
+
+  #status{
+    font-family:var(--font-mono);
+    font-size:12.5px;
+    color:var(--text-dim);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  #status.running{ color:var(--amber); }
+  #status.done{ color:var(--green); }
+  #status.error{ color:var(--red); }
+
+  .spinner{
+    display:none;
+    width:14px; height:14px;
+    border:2px solid var(--hair);
+    border-top-color:var(--amber);
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+    flex-shrink:0;
+  }
+  .spinner.visible{ display:inline-block; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* ---------- Output ---------- */
+  #output-section{
+    opacity:0;
+    animation:rise .6s cubic-bezier(.2,.8,.2,1) .34s forwards;
+  }
+  #output-section h2{
+    font-family:var(--font-mono);
+    font-size:12px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    margin-bottom:10px;
+  }
+  .terminal{
+    background:var(--bg-raised);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    overflow:hidden;
+  }
+  .terminal-bar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:11px 14px;
+    border-bottom:1px solid var(--panel-border);
+  }
+  .terminal-bar span{
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    color:var(--text-faint);
+    margin-left:6px;
+  }
+  #output{
+    white-space:pre-wrap;
+    word-break:break-word;
+    font-family:var(--font-mono);
+    font-size:12.5px;
+    line-height:1.6;
+    color:#c9d1e0;
+    padding:18px;
+    min-height:140px;
+    max-height:600px;
+    overflow-y:auto;
+  }
+  #output.empty{ color:var(--text-faint); }
+  #output.error-text{ color:var(--red); }
+
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(10px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width:760px){
+    .grid{ grid-template-columns:1fr; }
+    .pipeline-row{ flex-wrap:wrap; row-gap:18px; }
+    .connector{ display:none; }
+    .stage{ width:auto; flex-direction:row; }
+    header{ flex-direction:column; align-items:flex-start; }
+    .meta{ text-align:left; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="eyebrow">Automated pipeline · Groq</div>
+      <h1>Multi-Agent Debugger</h1>
+      <p class="subtitle">Paste a source file and its test suite. Three agents run in sequence — diagnosis, fix, and mutation re-check — typically finishing in 30–120 seconds.</p>
+    </div>
+    <div class="meta">RUNTIME <span>groq-api</span><br>MODE <span>diagnose → fix → verify</span></div>
+  </header>
+
+  <div class="pipeline">
+    <div class="pipeline-row" id="pipeline-row">
+      <div class="stage" id="stage-diagnose">
+        <div class="stage-node">
+          <div class="stage-ring"></div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.4-4.4" stroke-linecap="round"/></svg>
+        </div>
+        <div class="stage-label">Diagnose</div>
+        <div class="stage-sub">locate the fault</div>
+      </div>
+      <div class="connector" id="conn-1"></div>
+      <div class="stage" id="stage-fix">
+        <div class="stage-node">
+          <div class="stage-ring"></div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14.7 3.3a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L8.5 21.5 3 22l.5-5.5L14.7 3.3Z" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="stage-label">Fix</div>
+        <div class="stage-sub">patch the source</div>
+      </div>
+      <div class="connector" id="conn-2"></div>
+      <div class="stage" id="stage-verify">
+        <div class="stage-node">
+          <div class="stage-ring"></div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12l5 5L20 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="stage-label">Verify</div>
+        <div class="stage-sub">mutation re-check</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="editor">
+      <div class="editor-bar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="editor-title">buggy_code.py</span>
+      </div>
+      <textarea id="source" spellcheck="false" placeholder="Paste the source file to debug…"></textarea>
+    </div>
+    <div class="editor">
+      <div class="editor-bar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="editor-title">test_buggy_code.py</span>
+      </div>
+      <textarea id="tests" spellcheck="false" placeholder="Paste the pytest test file…"></textarea>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="run-btn" onclick="runPipeline()">Run debug pipeline</button>
+    <span class="spinner" id="spinner"></span>
+    <span id="status"></span>
+  </div>
+
+  <div id="output-section">
+    <h2>Output</h2>
+    <div class="terminal">
+      <div class="terminal-bar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span>result.log</span>
+      </div>
+      <div id="output" class="empty">Results will appear here once the pipeline finishes.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const stageEls = {
+    diagnose: document.getElementById('stage-diagnose'),
+    fix:      document.getElementById('stage-fix'),
+    verify:   document.getElementById('stage-verify'),
+  };
+  const conn1 = document.getElementById('conn-1');
+  const conn2 = document.getElementById('conn-2');
+
+  function resetPipeline(){
+    Object.values(stageEls).forEach(el => el.classList.remove('active','done','failed'));
+    conn1.classList.remove('flowing');
+    conn2.classList.remove('flowing');
+  }
+
+  let stageTimers = [];
+  function clearStageTimers(){
+    stageTimers.forEach(t => clearTimeout(t));
+    stageTimers = [];
+  }
+
+  // Simulates the three-stage visual progression while the single /run
+  // request is in flight (the API returns one combined result, not
+  // per-stage events).
+  function animateStages(){
+    resetPipeline();
+    stageEls.diagnose.classList.add('active');
+
+    stageTimers.push(setTimeout(() => {
+      stageEls.diagnose.classList.remove('active');
+      stageEls.diagnose.classList.add('done');
+      conn1.classList.add('flowing');
+      stageEls.fix.classList.add('active');
+    }, 1400));
+
+    stageTimers.push(setTimeout(() => {
+      stageEls.fix.classList.remove('active');
+      stageEls.fix.classList.add('done');
+      conn1.classList.remove('flowing');
+      conn2.classList.add('flowing');
+      stageEls.verify.classList.add('active');
+    }, 3200));
+  }
+
+  function settlePipeline(success){
+    clearStageTimers();
+    conn1.classList.remove('flowing');
+    conn2.classList.remove('flowing');
+    stageEls.diagnose.classList.remove('active');
+    stageEls.fix.classList.remove('active');
+    stageEls.verify.classList.remove('active');
+    stageEls.diagnose.classList.add(success ? 'done' : 'done');
+    stageEls.fix.classList.add('done');
+    stageEls.verify.classList.add(success ? 'done' : 'failed');
+  }
+
+  async function runPipeline() {
+    const source = document.getElementById('source').value.trim();
+    const tests  = document.getElementById('tests').value.trim();
+
+    if (!source || !tests) {
+      setStatus('error', 'Please paste both source code and test code before running.');
+      return;
+    }
+
+    const btn     = document.getElementById('run-btn');
+    const spinner = document.getElementById('spinner');
+    const output  = document.getElementById('output');
+
+    btn.disabled = true;
+    spinner.classList.add('visible');
+    output.classList.remove('error-text');
+    output.classList.add('empty');
+    output.textContent = '';
+    setStatus('running', 'Diagnosing — multiple AI API calls in progress…');
+    animateStages();
+
+    try {
+      const resp = await fetch('/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_code: source, test_code: tests }),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok || data.error) {
+        settlePipeline(false);
+        output.classList.remove('empty');
+        output.classList.add('error-text');
+        output.textContent = data.error || `HTTP ${resp.status}`;
+        setStatus('error', 'Pipeline returned an error.');
+      } else {
+        settlePipeline(true);
+        output.classList.remove('empty');
+        output.textContent = data.output || '(no output)';
+        setStatus('done', 'Done.');
+      }
+    } catch (err) {
+      clearStageTimers();
+      resetPipeline();
+      output.classList.remove('empty');
+      output.classList.add('error-text');
+      output.textContent = `Network error: ${err.message}`;
+      setStatus('error', 'Could not reach the server.');
+    } finally {
+      btn.disabled = false;
+      spinner.classList.remove('visible');
+    }
+  }
+
+  function setStatus(cls, msg) {
+    const el = document.getElementById('status');
+    el.className = cls;
+    el.textContent = msg;
+  }
+</script>
+
+</body>
+</html>
