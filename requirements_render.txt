@@ -1,0 +1,5 @@
+Flask
+gunicorn
+google-genai
+python-dotenv
+pytest
