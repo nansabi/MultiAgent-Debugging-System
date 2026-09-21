@@ -2,14 +2,21 @@
 Multi-Agent Debugging System — Orchestrator
 =============================================
 Wires together Diagnosis Agent -> Fix Agent -> Sandbox Re-run -> (retry loop)
--> Mutation Re-check Agent, using the Groq API (OpenAI-compatible).
+-> Mutation Re-check Agent, using the Google Gemini API.
 
 USAGE:
-    Windows PowerShell:  $env:GROQ_API_KEY = "gsk_..."
-    Mac/Linux:            export GROQ_API_KEY="gsk_..."
-    python orchestrator.py --source buggy_code.py --tests test_buggy_code.py
+    Windows PowerShell:  $env:GEMINI_API_KEY = "..."
+    Mac/Linux:            export GEMINI_API_KEY="..."
+    python Orchestrator.py --source buggy_code.py --tests test_buggy_code.py
 
-Requires: pip install groq
+Requires: pip install google-genai python-dotenv
+
+--- PROVIDER SWITCH LOG ---
+Originally used Groq (openai/gpt-oss-120b). Switched to Gemini (gemini-3.6-flash)
+because Groq's model naming convention ("openai/" prefix as literal model name)
+was incompatible with every CrewAI routing path available without LiteLLM.
+The Groq client init and call_agent() API call are preserved below as comments
+so the switch can be reversed quickly if needed.
 """
 
 import argparse
@@ -25,19 +32,30 @@ import time
 import types
 from pathlib import Path
 
-from groq import Groq, APITimeoutError, APIConnectionError
+from dotenv import load_dotenv
+load_dotenv()  # load .env so GEMINI_API_KEY is available without setting env manually
 
-# Groq's flagship general-purpose model. NOTE: Groq deprecates models on short notice —
-# llama-3.3-70b-versatile was retired as of Aug 2026. If this model 404s, check
-# https://console.groq.com/docs/models for the current lineup.
-MODEL = "openai/gpt-oss-120b"
+# --- Active provider: Google Gemini ---
+from google import genai
+from google.genai import types as genai_types
+from google.genai.errors import ClientError, ServerError
+
+# gemini-3.1-flash-lite: confirmed returning real responses in standalone test tonight.
+# gemini-3.6-flash and gemini-3.8-flash both sustained 503 overloads on the Fix Agent call.
+MODEL = "gemini-3.1-flash-lite"
 MAX_RETRIES = 3
 
-api_key = os.environ.get("GROQ_API_KEY")
+api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
-    sys.exit("ERROR: GROQ_API_KEY environment variable not set. "
-             "Get a key at https://console.groq.com/keys")
-client = Groq(api_key=api_key)
+    sys.exit("ERROR: GEMINI_API_KEY environment variable not set. "
+             "Get a key at https://aistudio.google.com/app/apikey")
+client = genai.Client(api_key=api_key)
+
+# --- Groq provider (commented out — kept for easy rollback) ---
+# from groq import Groq, APITimeoutError, APIConnectionError
+# GROQ_MODEL = "openai/gpt-oss-120b"
+# groq_api_key = os.environ.get("GROQ_API_KEY")
+# groq_client = Groq(api_key=groq_api_key)
 
 # Tracks per-call stats for the final cost/latency summary
 CALL_STATS = []  # list of dicts: {agent, seconds, prompt_tokens, completion_tokens}
@@ -185,10 +203,11 @@ Respond with ONLY a JSON object, no prose, no markdown fences, in this exact sch
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Groq on-demand tier commonly caps requests at 8000 tokens per minute (prompt + completion
-# combined). Keep a safety margin below that so we don't get a 413 rate_limit_exceeded error.
-TPM_SAFETY_LIMIT = 8000
-TPM_BUFFER = 500  # headroom for tokenizer estimation error
+# Gemini free tier rate limit: 10 RPM / 250k TPM on flash models.
+# We keep a token cap as a courtesy but Gemini doesn't enforce a hard per-minute
+# TPM the way Groq's on-demand tier does, so the ceiling is generous.
+TPM_SAFETY_LIMIT = 200000
+TPM_BUFFER = 5000  # headroom for tokenizer estimation error
 
 
 def _estimate_tokens(text: str) -> int:
@@ -197,25 +216,32 @@ def _estimate_tokens(text: str) -> int:
 
 
 def call_agent(agent_name: str, system_prompt: str, user_message: str, max_tokens: int = 4000,
-                _retry: bool = True, _network_retries: int = 2) -> dict:
-    """Call the LLM with a given agent system prompt, track cost/latency, and parse JSON.
+                _retry: bool = True, _network_retries: int = 4) -> dict:
+    """Call Gemini with a given agent system prompt, track cost/latency, and parse JSON.
 
-    max_tokens is automatically capped so (estimated prompt tokens + max_tokens) stays
-    under the account's tokens-per-minute limit, avoiding 413 rate_limit_exceeded errors.
+    Gemini's generate_content() takes system_instruction separately from contents.
+    Response text is at response.text; token counts are in response.usage_metadata
+    (prompt_token_count / candidates_token_count).
 
-    gpt-oss-120b is a reasoning model: by default it spends part of its completion token
-    budget on internal chain-of-thought (reasoning_effort="medium") before writing the
-    final answer, which can cause truncation even on short/simple schemas. We request
-    reasoning_effort="low" here since these agents are doing classification/formatting
-    tasks, not tasks that benefit much from deep reasoning, to leave more of the budget
-    for the actual JSON output.
+    Handles two distinct failure modes:
+      - Malformed/truncated JSON: retried once with a higher token ceiling.
+      - Transient network/rate-limit errors (ServerError HTTP 5xx, ClientError 429):
+        retried with short backoff. ClientError 429 = rate limit exceeded on Gemini.
 
-    Handles two distinct failure modes separately:
-      - Malformed/truncated JSON: retried once with a higher token ceiling (still capped
-        by TPM), since this is usually caused by hitting max_tokens.
-      - Transient network errors (timeouts, connection failures): retried with a short
-        backoff, since these are unrelated to prompt size or token budget and usually
-        resolve on their own within a few seconds.
+    # --- Groq version of this call (kept for rollback reference) ---
+    # response = groq_client.chat.completions.create(
+    #     model=GROQ_MODEL,
+    #     max_tokens=effective_max_tokens,
+    #     reasoning_effort="low",
+    #     messages=[
+    #         {"role": "system", "content": system_prompt},
+    #         {"role": "user", "content": user_message},
+    #     ],
+    # )
+    # text = response.choices[0].message.content
+    # prompt_tokens = response.usage.prompt_tokens
+    # completion_tokens = response.usage.completion_tokens
+    # finish_reason = response.choices[0].finish_reason  # "length" if truncated
     """
     estimated_prompt_tokens = _estimate_tokens(system_prompt) + _estimate_tokens(user_message)
     safe_max_tokens = max(500, TPM_SAFETY_LIMIT - TPM_BUFFER - estimated_prompt_tokens)
@@ -227,32 +253,39 @@ def call_agent(agent_name: str, system_prompt: str, user_message: str, max_token
 
     start = time.perf_counter()
     try:
-        response = client.chat.completions.create(
+        response = client.models.generate_content(
             model=MODEL,
-            max_tokens=effective_max_tokens,
-            reasoning_effort="low",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                max_output_tokens=effective_max_tokens,
+            ),
+            contents=user_message,
         )
-    except (APITimeoutError, APIConnectionError) as e:
-        if _network_retries > 0:
-            wait = 3 * (3 - _network_retries)  # 3s, then 6s
-            print(f"  [!] {agent_name} hit a transient network error ({type(e).__name__}). "
+    except (ServerError, ClientError) as e:
+        # ClientError 429 = rate limit; ServerError 5xx = transient backend issue.
+        is_rate_limit = isinstance(e, ClientError) and getattr(e, "code", 0) == 429
+        is_transient   = isinstance(e, ServerError) or is_rate_limit
+        if is_transient and _network_retries > 0:
+            wait = 10 * (5 - _network_retries)  # 10s, 20s, 30s, 40s
+            label = "rate limit" if is_rate_limit else "transient server error"
+            print(f"  [!] {agent_name} hit a {label} ({type(e).__name__} {getattr(e,'code','?')}). "
                   f"Retrying in {wait}s ({_network_retries} attempt(s) left)...")
             time.sleep(wait)
             return call_agent(agent_name, system_prompt, user_message, max_tokens=max_tokens,
                                _retry=_retry, _network_retries=_network_retries - 1)
-        print(f"  [!] {agent_name} failed after repeated network errors: {e}")
-        sys.exit(f"🛑 {agent_name} Agent could not reach the Groq API after retries. "
+        print(f"  [!] {agent_name} failed after repeated errors: {e}")
+        sys.exit(f"ERROR: {agent_name} Agent could not reach the Gemini API after retries. "
                  f"Check your internet connection and try again.")
     elapsed = time.perf_counter() - start
 
-    usage = getattr(response, "usage", None)
-    prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
-    completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
-    finish_reason = getattr(response.choices[0], "finish_reason", None)
+    usage = response.usage_metadata
+    prompt_tokens    = getattr(usage, "prompt_token_count",     0) if usage else 0
+    completion_tokens = getattr(usage, "candidates_token_count", 0) if usage else 0
+
+    # Gemini finish reason: check first candidate's finish_reason
+    candidate = response.candidates[0] if response.candidates else None
+    finish_reason = str(candidate.finish_reason) if candidate else None
+
     CALL_STATS.append({
         "agent": agent_name,
         "seconds": elapsed,
@@ -261,11 +294,11 @@ def call_agent(agent_name: str, system_prompt: str, user_message: str, max_token
     })
     print(f"  [{agent_name}] {elapsed:.2f}s | {prompt_tokens} prompt tokens | {completion_tokens} completion tokens")
 
-    if finish_reason == "length":
-        print(f"  [!] {agent_name} response was truncated (hit max_tokens={effective_max_tokens}).")
+    if finish_reason in ("FinishReason.MAX_TOKENS", "MAX_TOKENS"):
+        print(f"  [!] {agent_name} response was truncated (hit max_output_tokens={effective_max_tokens}).")
 
-    text = response.choices[0].message.content
-    text = re.sub(r"^```json\s*|\s*```$", "", text.strip())
+    text = response.text
+    text = re.sub(r"^```json\s*|\s*```$", "", text.strip(), flags=re.DOTALL)
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
@@ -275,7 +308,7 @@ def call_agent(agent_name: str, system_prompt: str, user_message: str, max_token
                   f"Retrying once with max_tokens={bumped} (still capped by TPM limit)...")
             return call_agent(agent_name, system_prompt, user_message, max_tokens=bumped, _retry=False)
         print(f"  [!] {agent_name} returned non-JSON output after retry:\n{text}")
-        sys.exit(f"🛑 {agent_name} Agent failed to return valid JSON after retry. Aborting run.")
+        sys.exit(f"ERROR: {agent_name} Agent failed to return valid JSON after retry. Aborting run.")
 
 
 def print_diff(before: str, after: str, filename: str):

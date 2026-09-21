@@ -1,11 +1,14 @@
 """
-order_engine.py
+order_engine.py  (DELIBERATELY BUGGY VERSION — for CrewAI diagnosis evaluation)
 
-Order processing module for the checkout system. Handles cart totals,
-coupon application, shipping tiers, tax, and invoice generation.
+Bug introduced: in process_order(), calculate_tax() is called on the PRE-coupon
+subtotal (the original item total) rather than the POST-coupon subtotal.
+This means customers who use a coupon are taxed on the higher, un-discounted amount
+instead of the discounted amount — they overpay tax.
 
-TODO: refactor calculate_shipping, it's grown a lot since the express-tier launch.
-TODO: pull TAX_RATES out into config once finance signs off on the new schema.
+Tests that fail:
+  - test_tax_calculation  (indirectly, through process_order)
+  - test_full_order_pipeline_with_coupon  (expects correct post-coupon tax)
 """
 
 import math
@@ -70,7 +73,7 @@ def apply_coupon(subtotal, coupon_code, applied_log=None):
     if coupon_code == "SAVE10":
         discount = subtotal * 0.10
     elif coupon_code == "SAVE20":
-            discount = subtotal * 0.20
+        discount = subtotal * 0.20
     elif coupon_code == "FLAT5" and subtotal > 20:
         discount = 5.00
 
@@ -100,14 +103,15 @@ def process_order(items, state=None, coupon_code=None, express=False, order_numb
         state = _DEFAULT_STATE
 
     subtotal = calculate_item_total(items)
-    pre_coupon_subtotal = subtotal
+    pre_coupon_subtotal = subtotal  # BUG: we accidentally keep a reference to pre-coupon value
 
     log = []
     if coupon_code:
         subtotal, log = apply_coupon(subtotal, coupon_code)
 
     shipping = calculate_shipping(subtotal, express=express, state=state)
-    tax = calculate_tax(subtotal, state)
+    # BUG: tax is computed on pre_coupon_subtotal instead of subtotal (the post-coupon value)
+    tax = calculate_tax(pre_coupon_subtotal, state)
     grand_total = round(subtotal + shipping + tax, 2)
 
     return {

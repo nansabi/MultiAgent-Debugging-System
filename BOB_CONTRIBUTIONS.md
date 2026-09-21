@@ -50,7 +50,7 @@ Fix: Modified `simple_mutation_test.py` to emit a `=== Survivor Mutant Sources =
 
 **File edited:** `simple_mutation_test.py`
 
-**What changed:** The `=== Survivor Mutant Sources ===` section added in 2.1 labelled each block with the mutant's generation-order index (`i` from the outer loop over all 28 mutants). `parse_survivors()` in `Orchestrator.py` numbers survivors by their position in the survivors-only summary list (1 through N). These two schemes diverged whenever the first survivor was not also the first generated mutant, causing `verify_equivalent_claims` to execute the wrong source when checking a given `mutant_id`.
+**What changed:** The `=== Survivor Mutant Sources ===` section added in 2.1 labelled each block with the mutant's generation-order index (`i` from the outer loop over all mutants). `parse_survivors()` in `Orchestrator.py` numbers survivors by their position in the survivors-only summary list (1 through N). These two schemes diverged whenever the first survivor was not also the first generated mutant, causing `verify_equivalent_claims` to execute the wrong source when checking a given `mutant_id`.
 
 Evidence of the bug: mutant 6 (described as `Constant 2 -> 3 (line 110, in process_order)`, a rounding-precision change on `grand_total`) was verified as producing a shipping value change from 5.99 to 17.99 — a +12.00 delta that is only possible from the express-surcharge mutation on a different mutant. This proved the source text being checked for one `mutant_id` was actually another mutant's source.
 
@@ -208,7 +208,43 @@ The subtotal is `16.0` vs `21.0` — a genuine $5 difference. The NOTE was factu
 
 **What prompted it:** User request to make the pipeline runnable from a browser for demo purposes without changing any existing logic.
 
-**Verification:** Started Flask with `python app.py`, confirmed `GET /` returned HTTP 200 and the HTML contained the expected button and textareas. Then posted the actual `buggy_code.py` and `test_buggy_code.py` content to `POST /run` and confirmed the returned JSON contained the full orchestrator stdout output (the run hit the API rate limit partway through due to 28 surviving mutants, but the server-subprocess-response chain worked correctly end to end).
+**Verification:** Started Flask with `python app.py`, confirmed `GET /` returned HTTP 200 and the HTML contained the expected button and textareas. Then posted the actual `buggy_code.py` and `test_buggy_code.py` content to `POST /run` and confirmed the returned JSON contained the full orchestrator stdout output.
+
+---
+
+### 2.10 — Provider migration: Groq to Gemini
+
+**File edited:** `Orchestrator.py`
+
+**What changed:** Replaced `from groq import Groq` / `Groq(api_key=...)` with `from google import genai` and the Gemini client initialization. Rewrote `call_agent()`'s response extraction to use Gemini's shape (`response.text`, `response.usage_metadata.prompt_token_count` / `candidates_token_count`) instead of Groq's OpenAI-style `response.choices[0].message.content`. Adapted rate-limit and error handling to Gemini's actual error types (`ClientError` code `429` for rate limits, `ServerError` code `503` for capacity overloads). Preserved the Groq implementation as commented-out code rather than deleting it. Added `load_dotenv()` and switched the required environment variable from `GROQ_API_KEY` to `GEMINI_API_KEY`.
+
+The specific Gemini model name was verified live rather than assumed: `gemini-2.5-flash` returned 404 (deprecated for new API keys). Of the models tested, `gemini-3.1-flash-lite` was the only one confirmed to return non-empty text in a standalone test call; two others returned no error but an empty response.
+
+**What prompted it:** Groq's free tier hit a hard daily token cap (200,000 tokens/day) mid-session. User decision to migrate rather than wait out the daily reset.
+
+**Verification:** Ran the full orchestrator end to end against the project's real test case. Diagnosis Agent correctly identified the actual root cause (tax calculated on pre-coupon subtotal) across multiple runs and two different Gemini models. Fix Agent produced a correct one-line patch. Pipeline completed through Diagnosis → Fix → tests-pass in a full run; later runs intermittently hit `ServerError 503` (an external Gemini capacity condition, not a code defect).
+
+---
+
+### 2.11 — CrewAI integration: build and verification-layer parity
+
+**Files created:** `crewai_orchestrator.py`, `crewai_diagnosis_agent.py`, `crewai_fix_agent.py`, `crewai_mutation_agent.py`
+
+**What changed:** Built a parallel, separate implementation of the pipeline using CrewAI's Agent/Task/Crew structure, backed by Gemini. This is a second, independent codebase alongside `Orchestrator.py` — not a merge into it; nothing runs both together.
+
+Three attempts were needed to get a working LLM connection:
+- Attempt 1 (Groq as backing LLM): CrewAI's `LLM` class treated `openai/gpt-oss-120b` as a `provider/model` routing string and stripped `openai/` before sending the request. On Groq, `openai/` is a literal required part of the model name, not a routing prefix. Result: `404 model_not_found`.
+- Attempt 2: switching to `groq/openai/gpt-oss-120b` reported a missing LiteLLM dependency.
+- Attempt 3: LiteLLM was already installed (version 1.102.0); the same error persisted, indicating a version-compatibility issue rather than a missing package. This hit the explicit stop condition set in the fix specification, and the user reverted to the working backup.
+- Resumption: switching the backing LLM to Gemini avoided the provider-prefix issue entirely (Gemini model names don't use that convention). This succeeded.
+
+An early version of the CrewAI pipeline included only one verification layer (real-execution checking) and, in one run, flagged a mutant as `real_coverage_gap` based solely on a claimed `invoice_id` date not matching the current date — the same false-positive pattern fix 2.1 was built to prevent, reintroduced because that fix had not yet been ported to the separate CrewAI codebase.
+
+The CrewAI pipeline was subsequently extended with the remaining verification layers. As of the most recent verified run, it includes all four layers present in `Orchestrator.py`: real-execution checking, line-coverage tracing, boundary-value tracing, and cross-contamination isolation for boundary-tagged mutants.
+
+**What prompted it:** User decision to evaluate CrewAI for IBM SkillBuild Hackathon Round 2, since it directly matches the project's multi-agent framing. Explicitly scoped as an isolated experiment, not a modification of the working pipeline.
+
+**Verification:** Ran the full CrewAI orchestrator against the real project files. It correctly identified and verified multiple genuine coverage gaps (an arithmetic mutation in `calculate_tax`, a boundary mutation in `apply_coupon`, and others), with mutant-side execution catching and correcting at least two cases where the model's own claimed output was wrong — matching the same self-correction pattern documented for the original system (Section 3). One remaining minor issue was found: mutant 7's diff description was labelled with the wrong line number (74 instead of 77), though its computed values and verdict were correct — a labelling issue of the same category as 2.2, here in the CrewAI version's independent implementation of that logic, not yet fixed.
 
 ---
 
@@ -220,27 +256,32 @@ These are cases where output produced during this session was later found to be 
 When the `=== Survivor Mutant Sources ===` section was first added, the source blocks were labelled with the generation-order index rather than the survivor-order index. The verification system was therefore executing the wrong source when checking a given `mutant_id`. This produced a mechanistically impossible result — a rounding-constant mutation on `grand_total` was reported as causing a shipping change of +$12.00 (the express surcharge), which can only come from a different mutation entirely. The error was caught by the user noting the physical impossibility of the claimed effect, then tracing it to the labelling mismatch.
 
 **3.2 — Equivalent-mutant claims without discriminating inputs (multiple mutants, pre-existing)**
-The triage agent (not Bob directly, but the LLM called by Bob's orchestrator code) repeatedly claimed `equivalent_mutant` verdicts without providing concrete evidence. The `_has_real_evidence()` check in `Orchestrator.py` was already in place to catch empty claims, but fully-populated claims with wrong values still passed. Multiple overrides across runs were triggered when actual execution produced different values than claimed. These were caught by `verify_equivalent_claims` re-executing the model's own chosen input and comparing the result.
+The triage agent repeatedly claimed `equivalent_mutant` verdicts without providing concrete evidence. Fully-populated claims with wrong values also passed. These were caught by `verify_equivalent_claims` re-executing the model's own chosen input and comparing the result.
 
 **3.3 — Mutant 5 initially verified as equivalent using a non-discriminating input (fix 2.3 / 2.4)**
-The orchestrator's line-coverage and boundary-value checks were not yet implemented when mutant 5 was first analyzed. The model chose `apply_coupon(50.00, None)` (discount=0.0) as its discriminating input. Both original and mutant return `(50.0, [])` for that input, so the equivalence appeared confirmed. The actual discriminating interval is `(0, 1]`. This was caught not by re-reading the reasoning but by the user computing `apply_coupon(9.00, 'SAVE10')` independently and finding `discount=0.9` distinguishes the variants.
+The model chose `apply_coupon(50.00, None)` (discount=0.0) as its discriminating input. Both original and mutant return `(50.0, [])` for that input, so the equivalence appeared confirmed. The actual discriminating interval is `(0, 1]`. This was caught by the user computing `apply_coupon(9.00, 'SAVE10')` independently and finding `discount=0.9` distinguishes the variants.
 
 **3.4 — Mutant 5 reasoning incorrectly stated "returns the original subtotal of $5.00" (fix 2.7)**
-After the batch-isolation fix (2.6), the Detail agent produced reasoning that said the mutant "returns the original subtotal of $5.00" for `apply_coupon(5.00, "SAVE10")`. Independent execution showed the mutant returns `(4.5, [])` — the subtotal is `4.5`, not `5.0`. Only the log entry disappears. The error was in the model's reasoning text and was caught by independent execution by the user.
+After the batch-isolation fix (2.6), the Detail agent produced reasoning that said the mutant "returns the original subtotal of $5.00" for `apply_coupon(5.00, "SAVE10")`. Independent execution showed the mutant returns `(4.5, [])` — the subtotal is `4.5`, not `5.0`. Only the log entry disappears. Caught by independent execution.
 
 **3.5 — Wording-correction NOTE incorrectly applied to mutant 9 (fix 2.8)**
-After the phrase list was expanded in fix 2.7, the correction NOTE was appended to mutant 9's reasoning. The NOTE states the subtotal is identical under both variants — which is correct for line 77 (where the `if` only gates logging) but not for line 74 (where the `if` gates the discount calculation). For mutant 9, `apply_coupon(21.0, "FLAT5")` returns `(16.0, [...])` on the original and `(21.0, [])` on the mutant — a $5 difference, not a logging-only difference. The error was caught when the user independently executed both variants and observed the differing subtotals.
+The NOTE states the subtotal is identical under both variants — correct for line 77, not for line 74. For mutant 9, `apply_coupon(21.0, "FLAT5")` returns `(16.0, [...])` on the original and `(21.0, [])` on the mutant — a $5 difference. Caught when the user independently executed both variants and observed the differing subtotals.
 
 **3.6 — Cross-contaminated reasoning for mutant 5 (demonstrated in fix 2.6)**
-In a run before the batch-isolation fix, mutant 5's reasoning described `subtotal > 20` (mutant 9's condition), used a `subtotal=25, FLAT5` example (mutant 9's domain), and mentioned the FLAT5 threshold — none of which is relevant to mutant 5's actual mutation (`discount > 0` → `discount > 1`). This happened because mutants 5 and 9 were sent to the Detail agent in the same API call and the model blended reasoning from both. The error was caught by the user observing that the reasoning described a different mutation's condition, then independently verifying that the claimed outputs were wrong for the actual mutant 5 input.
+In a run before the batch-isolation fix, mutant 5's reasoning described `subtotal > 20` (mutant 9's condition), used a `subtotal=25, FLAT5` example, and mentioned the FLAT5 threshold — none of which is relevant to mutant 5's actual mutation. This happened because mutants 5 and 9 were sent to the Detail agent in the same API call. Caught by the user observing that the reasoning described a different mutation than the one it was labelled with.
+
+**3.7 — Mislabeled mutant location in the CrewAI version (fix 2.11)**
+Mutant 7 was tagged as line 74 in its diff description, but its reasoning entirely concerned line 77's condition. The computed values and verdict were correct; only the location label was wrong. Caught by cross-referencing the claimed line number against the reasoning's actual content, the same category of bug as 2.2, independently reintroduced in the CrewAI codebase's own labelling logic. Not yet fixed.
 
 ---
 
 ## 4. What Bob Did Not Do
 
-- Did not design the multi-agent architecture (Diagnosis → Fix → Mutation Re-check pipeline). That architecture existed before this session.
+- Did not design the multi-agent architecture (Diagnosis → Fix → Mutation Re-check pipeline), or the CrewAI integration approach. That architecture existed before this session.
 - Did not decide which bugs to fix, in what order, or what the scope of any fix should be. Each fix was initiated by a user-written prompt that described the specific problem and specified the implementation approach.
 - Did not independently identify any bug in this codebase. Every bug fixed in this session was demonstrated to Bob by the user first — with specific evidence from actual execution output — before Bob implemented a fix.
 - Did not write `buggy_code.py`, `test_buggy_code.py`, or the core orchestration logic in `Orchestrator.py`. Those files existed before Bob's involvement. Bob added to and modified them but did not author them from scratch.
 - Did not run the orchestrator continuously in the background or monitor for regressions between sessions. Regressions were found and reported by the user.
-- Did not choose the LLM (Groq / `openai/gpt-oss-120b`), the API structure, or any of the agent prompt schemas. Those were part of the pre-existing design.
+- Did not choose the LLM providers (Groq, then Gemini), the API structure, or any of the agent prompt schemas. Those were part of the pre-existing design or user decisions made in response to external constraints (a rate limit; a hackathon requirement).
+- Did not decide to attempt, abandon, or resume the CrewAI experiment, or to stop the LiteLLM debugging attempt at the point it was stopped. Those were user decisions.
+- Did not choose which of the two final systems (original `Orchestrator.py` vs. CrewAI-based files) to submit. That determination was made by the user after reviewing the verification-layer comparison.

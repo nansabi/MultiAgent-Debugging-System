@@ -1,4 +1,5 @@
-from buggy_code import (
+"""Test file that imports from buggy_code_for_test (the buggy version) to get real failures."""
+from buggy_code_for_test import (
     calculate_item_total,
     get_tax_rate,
     calculate_shipping,
@@ -56,8 +57,6 @@ def test_coupon_save10():
 
 
 def test_coupon_no_code_leaves_log_empty():
-    # A completely separate customer, later in the day, applies no coupon.
-    # Their order history should show no coupons — this is a fresh order.
     discounted, log = apply_coupon(60.00, None)
     assert log == []
 
@@ -70,30 +69,19 @@ def test_full_order_pipeline_no_coupon():
 
 
 def test_full_order_pipeline_with_coupon():
+    # With SAVE20 on a $50 item in CA:
+    # post-coupon subtotal should be $40.00
+    # tax should be 0.0725 * 40.00 = $2.90  (NOT 0.0725 * 50.00 = $3.63)
     items = [{"name": "mug", "price": 50.00, "qty": 1}]
     result = process_order(items, state="CA", coupon_code="SAVE20", order_number=8)
     assert result["subtotal"] == 40.00
     assert result["applied_coupons"] == [{"code": "SAVE20", "discount": 10.00}]
+    assert result["tax"] == 2.90  # BUG: currently returns 3.63 (tax on pre-coupon $50)
 
 
 def test_grand_total_is_sum_not_difference():
-    # Regression test: mutation testing found that subtotal + shipping + tax
-    # in process_order's grand_total was never independently verified. A
-    # mutant flipping + to - passed the full suite undetected.
     items = [{"name": "mug", "price": 10.00, "qty": 1}]
     result = process_order(items, state="TX", express=False, order_number=1)
     expected = round(result["subtotal"] + result["shipping"] + result["tax"], 2)
     assert result["grand_total"] == expected
-    assert result["grand_total"] > result["subtotal"]  # rules out a subtraction bug
-
-
-def test_tax_applied_on_post_coupon_subtotal():
-    # Tax must be calculated on the discounted subtotal, not the original price.
-    # SAVE20 on a $50 item in CA: post-coupon subtotal = $40.
-    # Correct tax = 0.0725 * 40.00 = $2.90
-    # Buggy tax   = 0.0725 * 50.00 = $3.625 -> $3.62
-    items = [{"name": "mug", "price": 50.00, "qty": 1}]
-    result = process_order(items, state="CA", coupon_code="SAVE20", order_number=99)
-    assert result["tax"] == 2.90, (
-        f"Tax should be on post-coupon subtotal $40.00 (expected $2.90), got ${result['tax']}"
-    )
+    assert result["grand_total"] > result["subtotal"]
