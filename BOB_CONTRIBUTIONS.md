@@ -248,6 +248,80 @@ The CrewAI pipeline was subsequently extended with the remaining verification la
 
 ---
 
+### 2.12 - Sentinel v2 GitHub repository intake (Phase 1)
+
+**Files created:** `repo_intake.py`, `test_repo_intake.py`
+
+**Files modified:** `app.py`, `templates/index.html`, `.gitignore`, `BOB_CONTRIBUTIONS.md`
+
+**What changed:** Added strict HTTPS GitHub owner/repository URL validation; shallow cloning into managed per-job workspaces; Python/pytest detection; per-job virtual environments; dependency installation; bounded pytest execution with JUnit XML parsing; and `baseline_report.json` output. Git, pip, and pytest run through a list-argument `LocalRunner` interface with captured output and timeouts. New Flask endpoints start intake in a background thread and return stage, status, logs, JSON report, and raw XML. The page shows the Phase 1 trust warning, progress, failure table, and expandable JSON/XML. The existing `/` and `/run` handlers were left unchanged.
+
+**Verification:** `python -m pytest -q test_repo_intake.py` reported `7 passed, 9 subtests passed`, including clone timeout messaging and active size-limit checks. A tiny local Git fixture with one passing and one failing test completed intake and produced matching JSON/JUnit counts (`total=2`, `passed=1`, `failed=1`). A real network intake of `https://github.com/pallets/markupsafe` completed all stages; clone took 2.162 seconds with the 60-second timeout and 209,715,200-byte monitor, and its 484,494-byte checkout produced a matching report/XML (`80 total, 39 passed, 0 failed, 0 errors, 41 skipped`). Artifacts are in `workspaces/phase1-public-markupsafe-20260929/`. A real clone of `https://github.com/nansabi/Tourism_Project` confirmed `--depth 1`, then timed out during Git LFS filtering at 35% with 1-2 KiB/s progress. GitHub reports 28 KB for the Git repository, but 14 LFS pointers declare 361,619,777 bytes (344.87 MiB), exceeding the 200 MiB cap. Clone timeouts now return a smaller-repo/slow-connection message while preserving Git output in job logs; size-cap failures identify the 200 MiB checkout limit. A separate public repo, `itsdangerous`, exposed missing test-only `freezegun` because PEP 735 dependency groups are not installed. Flask test-client checks and the `/run` smoke test are documented above.
+
+**Known limitations and Phase 2 work:** Job state is held only in a process-local dictionary; it disappears on restart and is not shared across multiple server workers. Phase 2 must move job state to durable/shared storage. Repository installation and tests execute untrusted code on the host; Phase 2 must put the whole execution inside Docker with resource and network limits. The clone size is actively monitored and stopped at 200 MiB, but this does not cap unrelated temporary files or other resource use. Git LFS objects count against the limit, and slow LFS downloads may time out before reaching it. PEP 735 dependency groups such as `tests` are not yet installed automatically, which can cause test collection errors for some repositories. Intake currently supports Python projects using pytest and detects project/dependency files and test indicators at the repository root.
+
+---
+
+### 2.13 - Sentinel v2 Docker execution isolation (Phase 2)
+
+**Files created:** `docker_runner.py`, `test_docker_runner.py`
+
+**Files modified:** `repo_intake.py`, `app.py`, `templates/index.html`, `requirements.txt`, `BOB_CONTRIBUTIONS.md`
+
+**What changed:** Added `DockerRunner` using docker-py 7.1.0 and the pinned `python:3.11.11-slim-bookworm` image. Each command runs in a fresh, auto-removed container with only the job workspace bind-mounted at `/workspace`, 512 MiB memory, 1 CPU, 64 PIDs, all Linux capabilities dropped, and `no-new-privileges`. Container timeouts kill the container and return exit code 124. Dependency installation uses the network; pytest runs with `network_mode=none`. Venvs are created with `--without-pip`, then the base image's pip installs into that venv; this avoids a >120-second `ensurepip` delay over Windows bind mounts. Git clone remains host-side; Docker is the default execution runner, with explicit `SENTINEL_RUNNER=local` and an automatic logged `Local-unsafe` fallback when the daemon cannot be reached. The UI now identifies the active runner and describes the actual trust boundary.
+
+**Verification:** `docker ps` succeeded. `python -m pytest -s -v test_docker_runner.py test_repo_intake.py` reported `12 passed, 9 subtests passed`; compileall and `git diff --check` passed. Basic Docker output was `docker-command-ok`, exit code 0. Timeout proof: `timed_out=True`, exit code 124. Memory proof: a 2 GiB allocation attempt in a 512 MiB container exited 137 while the host remained healthy. Host-file security proof: the malicious `os.system('cat /workspace/../host-secret.txt ...')` command reported `No such file or directory` and its test asserted failure; the outer Docker test passed. Network security proof: a request to a live host test server with `network_mode=none` failed with `Temporary failure in name resolution`; the outer test passed. The Docker MarkupSafe E2E completed all stages and matched Phase 1 exactly: 80 tests, 39 passed, 0 failed, 0 errors, 41 skipped; JSON and JUnit XML counts matched. Artifacts are in `workspaces/phase2-docker-markupsafe-final/`. `docker ps -a --filter label=sentinel.managed=true` returned no containers. The real fallback test stopped Docker Desktop, observed the warning `Docker not available - falling back to LocalRunner (UNSAFE for untrusted repos)` and `{'mode': 'local', 'label': 'Local-unsafe', 'unsafe': True}`, then restarted Docker Desktop and confirmed `docker ps` worked.
+
+**Known limitations and Phase 3 work:** Git clone and Git LFS downloads still happen on the host. Pip/build backends execute repository-controlled build code with network access during installation. Docker uses a pinned version tag, not an immutable image digest. Disk, inode, and bandwidth limits are not enforced. Job records remain process-local. Phase 3 should consider containerizing clone/LFS, pinning the image by digest, applying storage and egress limits during install, persisting job state, and making the unsafe local fallback an explicit operator opt-in rather than an automatic path.
+
+---
+
+### 2.14 - Sentinel v2 Phase 3 source localization and workspace patching
+
+**Files inspected:** `repo_fix_pipeline.py`, `test_repo_fix_pipeline.py`, `workspaces/phase3_e2e_fixture/`
+
+**What changed:** Phase 3 locates a project source file from a baseline failure, passes it and the failing test to the existing Diagnosis/Fix/Mutation orchestrator, applies the returned patch only after resolving the destination under that intake job's workspace, and reruns the suite. The successful `multiply_module.py` fixture changes `return a + b` to `return a * b`.
+
+**Diff evidence:** The prior successful E2E result was not persisted as a separate result/diff JSON artifact. The exact diff below was reconstructed without rerunning the E2E from the preserved buggy source in `_setup_e2e_fixture.py` and the patched file still present in the job workspace:
+
+```diff
+--- multiply_module.py (before)
++++ multiply_module.py (after)
+@@ -1,3 +1,3 @@
+ def multiply(a, b):
+   """Return the product of a and b."""
+-    return a + b   # BUG: should be a * b
++    return a * b   # BUG: should be a * b
+```
+
+The current patched source resolves to `workspaces/phase3_e2e_fixture/repo/multiply_module.py`, inside `workspaces/phase3_e2e_fixture`. The locator and workspace-boundary regression selection reported `4 passed`; this includes the high-confidence traceback source case, library-only ambiguous case, valid in-workspace patch, and rejection of an outside-workspace path while leaving its sentinel file unchanged. The retained patched fixture suite separately reported `3 passed`. No diagnosis/fix E2E was rerun for this verification. There is no persisted filesystem-change manifest from the original E2E, so the historical all-path claim is supported by the guarded write implementation and regression tests, not a retrospective filesystem snapshot.
+
+**Known limitations and Phase 4 work:** Source localization can still return no candidate or multiple plausible candidates when tracebacks/imports are incomplete. The current successful-patch evidence is a small single-file fixture; larger package layouts and generated code need broader coverage. The orchestrator process itself is still launched by the Phase 3 host pipeline, so Phase 4 should isolate diagnosis/fix orchestration, persist a per-job before/after file manifest and audit trail, and test patch containment on multi-file repositories and interrupted jobs.
+
+---
+
+### 2.15 - Sentinel v2 LangGraph orchestration (Phase 7)
+
+Added `langgraph_orchestrator.py` as a selectable alternative to the existing custom and CrewAI orchestrators. `SENTINEL_ORCHESTRATOR` accepts `custom`, `crewai`, or `langgraph`; the default remains `custom`. The LangGraph StateGraph explicitly routes failing tests through Diagnose and Fix, retries through the same three-retry limit (four Fix attempts including the initial attempt), and reaches `COULD_NOT_FIX` when that limit is exhausted. Passing tests continue to mutation analysis, survivor triage, test generation, and final verdict selection.
+
+The LangGraph path supports multiple project source files. The pipeline expands candidate sources through project-local imports, stages the full repository, forwards all selected source paths to LangGraph, and preserves proposed multi-file patches behind the existing approval gate. Approval applies the complete patch set and reruns the baseline suite; custom and CrewAI remain single-source-file flows. No changes were made to `Orchestrator.py` or `crewai_orchestrator.py`.
+
+**Phase 7 verification:** Focused graph/pipeline regressions passed, including four Fix calls followed by the explicit `COULD_NOT_FIX` result, backend selection, transitive source discovery, and staged two-file approval. Live Gemini runs produced `ACCEPT_FIX` from all three backends on the multiply fixture, with the same final `return a * b` patch and closely matching diagnoses. The two-file signature fixture changed both modules; each single-file-only variant failed, while the combined files passed (2 tests). The archived hard-case audit records custom `COULD_NOT_FIX` after four Fix calls, but a fresh LangGraph replay fixed the archived calculator/main failure in one Fix call and returned `ACCEPT_WITH_ADDED_TESTS`; the historical verdict therefore did not reproduce on replay.
+
+**Known limitations / Phase 8:** Mutation analysis remains scoped to the primary source file even for multi-file fixes. Dependency discovery follows resolvable project-local Python imports but does not infer dynamic imports, generated modules, or runtime-loaded code. Custom and CrewAI remain single-file orchestrators; multi-file mutation verification and broader real-repository comparisons remain future work.
+
+### 2.16 - Sentinel v2 manual unverified fixes (Phase 8)
+
+Added an alternate intake path for Python repositories without pytest indicators. Stack detection now recognizes Python source files in nested project directories while excluding generated/dependency directories. Such repositories complete intake with `verification_mode: "none"` and a baseline report, without installing dependencies or running repository code.
+
+The new `POST /repo/manual-fix/<intake_job_id>` flow accepts an issue description and optional suspected file, ranks source candidates from the description when a file is not supplied, and supports the configured custom, CrewAI, and LangGraph agents. It proposes a patch but skips suite execution and mutation analysis. Jobs and audit records use `verification_mode: "unverified"` and `final_verdict: "UNVERIFIED_FIX"`. The proposal remains staged for the existing manual review gate; approval requires an explicit server-validated confirmation, and unverified exports are blocked before approval.
+
+**Phase 8 live verification:** Intake of `nansabi/AI-CUSTOMER-SUPPORT-AGENT` completed as Python with `verification_mode: "none"`; no dependencies were installed and no repository code was run. A manual request for `api/main.py` identified the relative FAQ document path in `load_docs()` as dependent on the process working directory and proposed resolving it relative to the source file. The live audit recorded `UNVERIFIED_FIX`, `verification_mode: "unverified"`, empty execution commands, and no suite or mutation verdict. The review panel displayed the prominent unverified warning, and its Approve button was disabled until the manual-review checkbox was checked. Approval was not submitted.
+
+The test-verified multiply regression also passed end to end in an isolated temporary workspace: `ACCEPT_FIX`, `verification_mode: "test_verified"`, `suite_passed: true`, and mutation verdict `ACCEPT_FIX`. Focused no-pytest detection regressions passed (2 tests).
+
+**Known limitations / Phase 9:** Description-to-file ranking can choose the wrong file or fail to find one; users should provide a suspected path when possible. Manual proposals currently select a single source file, cannot be verified by tests or mutation analysis, and always require human review. Phase 9 should add authenticated real pull-request creation, branch push and PR-permission handling, safe behavior for existing/conflicting branches, and auditable PR links/status while preserving the approval gate and `UNVERIFIED_FIX` distinction.
+
 ## 3. Accuracy Disclosure
 
 These are cases where output produced during this session was later found to be incorrect by independent code execution.

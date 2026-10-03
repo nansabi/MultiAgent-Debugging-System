@@ -23,6 +23,7 @@ USAGE:
 
 import ast
 import copy
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -219,6 +220,19 @@ class Mutator(ast.NodeTransformer):
 
 def run_pytest(test_file: str) -> bool:
     """Return True if all tests pass."""
+    docker_workspace = os.environ.get("SENTINEL_DOCKER_WORKSPACE")
+    docker_python = os.environ.get("SENTINEL_DOCKER_PYTHON")
+    if docker_workspace and docker_python:
+        from docker_runner import DockerRunner
+
+        result = DockerRunner(docker_workspace).run(
+            [docker_python, "-m", "pytest", test_file, "-q"],
+            cwd=Path(test_file).resolve().parent,
+            timeout=120,
+            network_enabled=False,
+        )
+        return result.exit_code == 0
+
     result = subprocess.run(
         [sys.executable, "-m", "pytest", test_file, "-q"],
         capture_output=True, text=True,

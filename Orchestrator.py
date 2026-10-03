@@ -345,6 +345,19 @@ def print_cost_summary():
 
 def run_tests(test_path: str) -> tuple[bool, str]:
     """Run pytest and return (passed, full_output)."""
+    docker_workspace = os.environ.get("SENTINEL_DOCKER_WORKSPACE")
+    docker_python = os.environ.get("SENTINEL_DOCKER_PYTHON")
+    if docker_workspace and docker_python:
+        from docker_runner import DockerRunner
+
+        result = DockerRunner(docker_workspace).run(
+            [docker_python, "-m", "pytest", "-v", test_path],
+            cwd=Path(test_path).resolve().parent,
+            timeout=120,
+            network_enabled=False,
+        )
+        return result.exit_code == 0, result.stdout + result.stderr
+
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "-v", test_path],
         capture_output=True, text=True,

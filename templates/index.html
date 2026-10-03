@@ -39,15 +39,15 @@
   body{
     font-family:var(--font-body);
     background:
-      radial-gradient(1100px 500px at 12% -10%, rgba(72,201,217,0.07), transparent 60%),
-      radial-gradient(900px 500px at 100% 0%, rgba(240,167,66,0.05), transparent 55%),
+      radial-gradient(1100px 600px at 8% 0%, rgba(72,201,217,0.11), transparent 60%),
+      radial-gradient(900px 600px at 100% 14%, rgba(125,94,214,0.10), transparent 58%),
       var(--bg);
     color:var(--text);
     min-height:100vh;
-    padding:40px 24px 80px;
+    padding:0;
   }
 
-  .wrap{ max-width:1180px; margin:0 auto; }
+  .wrap{ max-width:1180px; margin:0 auto; padding:0 24px 80px; }
 
   /* ---------- Header ---------- */
   header{
@@ -353,26 +353,647 @@
   #output.empty{ color:var(--text-faint); }
   #output.error-text{ color:var(--red); }
 
+  /* ---------- Repository intake ---------- */
+  .repo-panel{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:22px;
+    margin-bottom:28px;
+    opacity:0;
+    animation:rise .6s cubic-bezier(.2,.8,.2,1) .12s forwards;
+  }
+  .repo-heading{ margin-bottom:18px; }
+  .repo-heading h2{
+    font-family:var(--font-display);
+    font-size:19px;
+    margin-bottom:5px;
+  }
+  .runner-status{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:5px 8px;
+    border:1px solid var(--green-dim);
+    border-radius:5px;
+    color:var(--green);
+    font-family:var(--font-mono);
+    font-size:10px;
+    text-transform:uppercase;
+  }
+  .runner-status::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .runner-status.unsafe{ border-color:var(--amber-dim); color:var(--amber); }
+  .repo-form{
+    display:flex;
+    align-items:flex-end;
+    gap:12px;
+  }
+  .repo-url-field{ flex:1; min-width:0; }
+  .repo-url-field label{
+    display:block;
+    margin-bottom:7px;
+    color:var(--text-dim);
+    font-family:var(--font-mono);
+    font-size:11px;
+  }
+  #repo-url{
+    width:100%;
+    height:42px;
+    padding:0 12px;
+    border:1px solid var(--hair);
+    border-radius:6px;
+    background:var(--bg-raised);
+    color:var(--text);
+    font-family:var(--font-mono);
+    font-size:12px;
+  }
+  #repo-url:focus{ outline:2px solid rgba(72,201,217,.32); border-color:var(--cyan); }
+  #repo-url::placeholder{ color:var(--text-faint); }
+  .repo-warning{
+    margin-top:12px;
+    color:var(--amber);
+    font-size:12px;
+  }
+  .manual-fix-form{
+    margin:16px 0;
+    padding:16px;
+    border:1px solid var(--amber-dim);
+    border-left:3px solid var(--amber);
+    border-radius:6px;
+    background:var(--bg-raised);
+  }
+  .manual-fix-form h3{ margin-top:0 !important; color:var(--amber) !important; }
+  .manual-fix-form label{
+    display:block;
+    margin:10px 0 6px;
+    color:var(--text-dim);
+    font-family:var(--font-mono);
+    font-size:11px;
+  }
+  .manual-fix-form textarea, .manual-fix-form input{
+    width:100%;
+    padding:10px;
+    border:1px solid var(--hair);
+    border-radius:5px;
+    background:var(--panel);
+    color:var(--text);
+    font:12px/1.5 var(--font-mono);
+  }
+  .manual-fix-form textarea{ min-height:90px; resize:vertical; }
+  .manual-fix-form button{ margin-top:10px; }
+  .unverified-warning{
+    margin:12px 0;
+    padding:14px;
+    border:2px solid #ff8a35;
+    border-left:7px solid #ff5d35;
+    border-radius:5px;
+    background:#3a1e12;
+    color:#ffd2ad;
+    font-size:14px;
+    font-weight:700;
+    line-height:1.5;
+  }
+  .unverified-warning[hidden], .manual-review-confirm[hidden]{ display:none; }
+  .manual-review-confirm{
+    display:block;
+    flex-basis:100%;
+    padding:10px;
+    border:1px solid #ff8a35;
+    border-radius:5px;
+    color:#ffd2ad;
+    font-size:12px;
+  }
+  .manual-review-confirm input{ margin-right:7px; }
+  .fix-panel.unverified{ border-color:#ff8a35; border-left-color:#ff5d35; }
+  .fix-panel.unverified .fix-state{ color:#ffad72; }
+  #repo-job{ margin-top:20px; border-top:1px solid var(--panel-border); padding-top:17px; }
+  .repo-job-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:15px;
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  #repo-stage-label{ color:var(--amber); }
+  .repo-steps{
+    display:grid;
+    grid-template-columns:repeat(5, minmax(0, 1fr));
+    gap:8px;
+    margin-bottom:15px;
+    list-style:none;
+  }
+  .repo-steps li{
+    border-top:2px solid var(--hair);
+    padding-top:7px;
+    color:var(--text-faint);
+    font-family:var(--font-mono);
+    font-size:10px;
+    text-transform:uppercase;
+  }
+  .repo-steps li.active{ border-color:var(--amber); color:var(--amber); }
+  .repo-steps li.done{ border-color:var(--green); color:var(--green); }
+  .repo-steps li.failed{ border-color:var(--red); color:var(--red); }
+  #repo-logs, .repo-report pre{
+    max-height:220px;
+    overflow:auto;
+    padding:12px;
+    border:1px solid var(--panel-border);
+    border-radius:6px;
+    background:var(--bg-raised);
+    color:#c9d1e0;
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+    font:11px/1.55 var(--font-mono);
+  }
+  #repo-results{ margin-top:20px; }
+  #repo-results h3{
+    font-family:var(--font-mono);
+    font-size:12px;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    margin:16px 0 9px;
+  }
+  .repo-table-wrap{ overflow-x:auto; border:1px solid var(--panel-border); border-radius:6px; }
+  .repo-table{ width:100%; border-collapse:collapse; min-width:540px; text-align:left; }
+  .repo-table th, .repo-table td{
+    padding:10px 12px;
+    border-bottom:1px solid var(--panel-border);
+    vertical-align:top;
+    font-size:12px;
+    line-height:1.5;
+    overflow-wrap:anywhere;
+  }
+  .repo-table th{
+    background:var(--bg-raised);
+    color:var(--text-dim);
+    font-family:var(--font-mono);
+    font-size:10px;
+    font-weight:500;
+    text-transform:uppercase;
+  }
+  .repo-table td:first-child, .repo-table td:nth-child(2){ font-family:var(--font-mono); }
+  .repo-table tr:last-child td{ border-bottom:0; }
+  .repo-table th:last-child, .repo-table td:last-child{ width:150px; white-space:nowrap; }
+  .repo-table .fix-row-btn{ padding:7px 10px; font-size:11px; border-radius:5px; }
+  .repo-table .fix-row-btn:disabled{ opacity:.65; }
+  .repo-report{ margin-top:10px; }
+  .repo-report summary{ color:var(--text-dim); cursor:pointer; font-family:var(--font-mono); font-size:11px; padding:8px 0; }
+  .repo-report pre{ max-height:360px; }
+  .fix-panel{
+    margin-top:16px;
+    padding:16px;
+    border:1px solid var(--amber-dim);
+    border-left:3px solid var(--amber);
+    border-radius:6px;
+    background:var(--bg-raised);
+  }
+  .fix-panel.approved{ border-color:var(--green-dim); border-left-color:var(--green); }
+  .fix-panel.rejected, .fix-panel.failed{ border-color:var(--red-dim); border-left-color:var(--red); }
+  .fix-panel-head{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; }
+  .fix-panel-head h4{ font:600 14px var(--font-display); }
+  .fix-state{ color:var(--amber); font:11px var(--font-mono); text-transform:uppercase; }
+  .fix-panel.approved .fix-state{ color:var(--green); }
+  .fix-panel.rejected .fix-state, .fix-panel.failed .fix-state{ color:var(--red); }
+  .fix-panel p{ color:var(--text-dim); font-size:12px; line-height:1.5; margin:8px 0; }
+  .fix-panel pre{ max-height:220px; overflow:auto; padding:12px; border:1px solid var(--panel-border); border-radius:5px; background:var(--panel); color:#c9d1e0; white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.55 var(--font-mono); }
+  .fix-actions{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+  .fix-actions button{ padding:8px 12px; font-size:11px; border-radius:5px; }
+  .fix-actions .reject-btn{ background:var(--red-dim); color:var(--text); }
+  .fix-actions .export-btn{ background:#293541; color:var(--text); }
+  .fix-actions .approve-btn{ background:var(--green); color:#071b12; }
+  .fix-actions button[hidden]{ display:none; }
+  #fix-reject-reason{ width:100%; height:56px; min-height:56px; margin-top:8px; padding:9px; border:1px solid var(--hair); border-radius:5px; background:var(--panel); color:var(--text); font:11px/1.5 var(--font-mono); resize:vertical; }
+
   @keyframes rise{
     from{ opacity:0; transform:translateY(10px); }
     to{ opacity:1; transform:translateY(0); }
   }
 
+  /* ---------- Sentinel landing page ---------- */
+  html{ scroll-behavior:smooth; scroll-padding-top:92px; }
+  section[id]{ scroll-margin-top:92px; }
+  .site-nav{
+    position:sticky;
+    top:0;
+    z-index:20;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    background:rgba(10,13,19,.78);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+  }
+  .site-nav-inner{
+    min-height:72px;
+    max-width:1180px;
+    margin:0 auto;
+    padding:10px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+  }
+  .brand{
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+    color:var(--text);
+    text-decoration:none;
+    font:700 18px var(--font-display);
+    letter-spacing:-.04em;
+    flex-shrink:0;
+  }
+  .brand-mark{
+    width:34px;
+    height:34px;
+    display:grid;
+    place-items:center;
+    border:1px solid rgba(72,201,217,.38);
+    border-radius:11px;
+    color:var(--cyan);
+    background:linear-gradient(145deg,rgba(72,201,217,.17),rgba(72,201,217,.04));
+    box-shadow:0 0 24px rgba(72,201,217,.1);
+  }
+  .brand-mark svg{ width:19px; height:19px; }
+  .nav-links{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:24px;
+    list-style:none;
+  }
+  .nav-links a{
+    color:var(--text-dim);
+    text-decoration:none;
+    font-size:12px;
+    font-weight:500;
+    transition:color .2s ease;
+  }
+  .nav-links a:hover,.nav-links a:focus-visible{ color:var(--cyan); }
+  .nav-end{ display:flex; align-items:center; gap:12px; }
+  .nav-try{
+    padding:9px 14px;
+    border-radius:9px;
+    color:#06171a;
+    background:var(--cyan);
+    text-decoration:none;
+    font:600 12px var(--font-display);
+    transition:transform .2s ease,box-shadow .2s ease,background .2s ease;
+    white-space:nowrap;
+  }
+  .nav-try:hover{ transform:translateY(-2px); box-shadow:0 6px 22px rgba(72,201,217,.24); }
+  .nav-status{ white-space:nowrap; }
+  .hero{
+    position:relative;
+    isolation:isolate;
+    overflow:hidden;
+    margin:44px 0 76px;
+    padding:76px clamp(24px,7vw,88px);
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:24px;
+    background:
+      radial-gradient(600px 300px at 82% 10%,rgba(72,201,217,.14),transparent 70%),
+      radial-gradient(440px 260px at 4% 100%,rgba(110,87,193,.12),transparent 72%),
+      linear-gradient(135deg,rgba(255,255,255,.075),rgba(255,255,255,.025));
+    box-shadow:0 24px 80px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.07);
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+  }
+  .hero::after{
+    content:"";
+    position:absolute;
+    z-index:-1;
+    width:280px;
+    height:280px;
+    right:8%;
+    top:50%;
+    transform:translateY(-50%);
+    border:1px solid rgba(72,201,217,.12);
+    border-radius:50%;
+    box-shadow:0 0 0 38px rgba(72,201,217,.025),0 0 0 78px rgba(72,201,217,.02);
+  }
+  .hero-content{ max-width:760px; position:relative; }
+  .hero-kicker,.section-kicker{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    color:var(--cyan);
+    font:500 10px var(--font-mono);
+    letter-spacing:.14em;
+    text-transform:uppercase;
+  }
+  .hero-kicker{
+    padding:7px 10px;
+    border:1px solid rgba(72,201,217,.2);
+    border-radius:999px;
+    background:rgba(72,201,217,.06);
+  }
+  .hero-kicker::before{ content:""; width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 12px var(--green); }
+  .hero h1{
+    max-width:760px;
+    margin:23px 0 16px;
+    font-size:clamp(42px,6vw,72px);
+    line-height:1.02;
+    letter-spacing:-.055em;
+  }
+  .hero h1 span{
+    color:transparent;
+    background:linear-gradient(90deg,#f0f6f8 8%,#8adce4 72%,#48c9d9);
+    -webkit-background-clip:text;
+    background-clip:text;
+  }
+  .hero-copy{ max-width:610px; color:var(--text-dim); font-size:15px; line-height:1.8; }
+  .hero-actions{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-top:29px; }
+  .hero-button{
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+    padding:13px 18px;
+    border-radius:10px;
+    color:#06171a;
+    background:var(--cyan);
+    text-decoration:none;
+    font:600 13px var(--font-display);
+    box-shadow:0 7px 26px rgba(72,201,217,.14);
+    transition:transform .2s ease,box-shadow .2s ease,background .2s ease;
+  }
+  .hero-button:hover{ transform:translateY(-2px); background:#69d9e5; box-shadow:0 10px 30px rgba(72,201,217,.27); }
+  .hero-button svg{ width:15px; height:15px; }
+  .hero-note{ color:var(--text-faint); font-size:11px; }
+  .landing-section{ margin:0 0 76px; }
+  .section-heading{ max-width:640px; margin-bottom:24px; }
+  .section-heading h2{
+    margin:10px 0 8px;
+    font:600 clamp(25px,3vw,34px)/1.2 var(--font-display);
+    letter-spacing:-.04em;
+  }
+  .section-heading p{ color:var(--text-dim); font-size:13px; line-height:1.7; }
+  .feature-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+  .feature-card,.step-card,.about-card{
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:16px;
+    background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.025));
+    box-shadow:0 12px 36px rgba(0,0,0,.16),inset 0 1px rgba(255,255,255,.035);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+  }
+  .feature-card{
+    min-height:206px;
+    padding:21px 19px;
+    transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;
+  }
+  .feature-card:hover,.step-card:hover{
+    transform:translateY(-4px);
+    border-color:rgba(72,201,217,.27);
+    box-shadow:0 18px 44px rgba(0,0,0,.24),0 0 28px rgba(72,201,217,.06);
+  }
+  .feature-icon{
+    width:39px;
+    height:39px;
+    display:grid;
+    place-items:center;
+    margin-bottom:20px;
+    border:1px solid rgba(72,201,217,.18);
+    border-radius:12px;
+    color:var(--cyan);
+    background:rgba(72,201,217,.08);
+    font-size:18px;
+  }
+  .feature-card h3{ margin-bottom:8px; font:600 14px var(--font-display); }
+  .feature-card p{ color:var(--text-dim); font-size:11.5px; line-height:1.65; }
+  .steps-grid{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }
+  .step-card{
+    position:relative;
+    min-height:150px;
+    padding:20px 17px;
+    transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;
+  }
+  .step-number{ color:var(--cyan); font:500 10px var(--font-mono); letter-spacing:.1em; }
+  .step-card h3{ margin:24px 0 6px; font:600 16px var(--font-display); }
+  .step-card p{ color:var(--text-dim); font-size:11px; line-height:1.55; }
+  .step-card:not(:last-child)::after{
+    content:"";
+    position:absolute;
+    top:33px;
+    right:-18px;
+    z-index:2;
+    width:22px;
+    height:1px;
+    background:linear-gradient(90deg,rgba(72,201,217,.65),rgba(72,201,217,0));
+  }
+  .about-card{
+    display:grid;
+    grid-template-columns:1.3fr .7fr;
+    gap:36px;
+    align-items:center;
+    padding:30px clamp(22px,5vw,48px);
+  }
+  .about-card h2{ margin:10px 0 12px; font:600 27px/1.2 var(--font-display); letter-spacing:-.035em; }
+  .about-card p{ max-width:650px; color:var(--text-dim); font-size:12.5px; line-height:1.8; }
+  .about-principle{
+    padding-left:22px;
+    border-left:1px solid rgba(72,201,217,.28);
+    color:var(--text);
+    font:500 16px/1.55 var(--font-display);
+  }
+  .about-principle span{ display:block; margin-top:8px; color:var(--text-faint); font:10px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; }
+  .tool-section{ padding-top:4px; }
+  .tool-section > header{ margin-bottom:22px; }
+  .tool-section .repo-panel,.tool-section .pipeline,.tool-section .editor,.tool-section .terminal,
+  .tool-section .fix-panel,.tool-section .manual-fix-form{
+    border-color:rgba(255,255,255,.10);
+    border-radius:15px;
+    background-color:rgba(18,22,31,.76);
+    box-shadow:0 16px 45px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.035);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+  }
+  .tool-section .repo-panel{ padding:26px; }
+  .tool-section .pipeline{ padding:28px 32px; }
+  .tool-section .editor{ background-color:rgba(18,22,31,.72); }
+  .tool-section .terminal{ background-color:rgba(16,20,29,.78); }
+  .tool-section .editor-bar{ background:rgba(16,20,29,.72); }
+  .tool-section .repo-heading .runner-status{ display:none; }
+  .tool-section .manual-fix-form{ border-color:rgba(240,167,66,.36); }
+  .tool-section .fix-panel{ background-color:rgba(16,20,29,.8); }
+  .tool-section .repo-warning{ line-height:1.6; }
+  .tool-section #repo-url,.tool-section .manual-fix-form input,.tool-section .manual-fix-form textarea{
+    border-radius:9px;
+    background:rgba(10,13,19,.58);
+  }
+  .site-footer{ border-top:1px solid rgba(255,255,255,.08); background:rgba(5,7,11,.3); }
+  .footer-inner{
+    max-width:1180px;
+    margin:0 auto;
+    padding:24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:22px;
+  }
+  .footer-brand{ color:var(--text-dim); font-size:11px; line-height:1.7; }
+  .footer-brand strong{ display:block; color:var(--text); font:600 15px var(--font-display); }
+  .tech-badges{ display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:7px; }
+  .tech-badges span{
+    padding:6px 9px;
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:999px;
+    background:rgba(255,255,255,.035);
+    color:var(--text-dim);
+    font:10px var(--font-mono);
+  }
+  .footer-link{ color:var(--cyan); font-size:11px; text-decoration:none; white-space:nowrap; }
+  .footer-link:hover{ text-decoration:underline; }
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:3px; }
+
   /* ---------- Responsive ---------- */
   @media (max-width:760px){
     .grid{ grid-template-columns:1fr; }
+    .repo-form{ align-items:stretch; flex-direction:column; }
+    .repo-form button{ align-self:flex-start; }
+    .repo-steps{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .repo-job-head{ align-items:flex-start; flex-direction:column; }
     .pipeline-row{ flex-wrap:wrap; row-gap:18px; }
     .connector{ display:none; }
     .stage{ width:auto; flex-direction:row; }
     header{ flex-direction:column; align-items:flex-start; }
     .meta{ text-align:left; }
+    .site-nav-inner{ flex-wrap:wrap; gap:10px 16px; padding-top:10px; padding-bottom:10px; }
+    .nav-links{ order:3; width:100%; justify-content:space-between; gap:14px; }
+    .nav-end{ margin-left:auto; }
+    .nav-end .runner-status{ display:none; }
+    .hero{ margin:24px 0 54px; padding:54px 26px; border-radius:19px; }
+    .hero::after{ right:-170px; opacity:.55; }
+    .landing-section{ margin-bottom:56px; }
+    .feature-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .steps-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .step-card:last-child{ grid-column:1/-1; }
+    .step-card:not(:last-child)::after{ display:none; }
+    .about-card{ grid-template-columns:1fr; gap:22px; }
+    .about-principle{ max-width:440px; }
+    .footer-inner{ align-items:flex-start; flex-direction:column; }
+  }
+  @media (max-width:440px){
+    .wrap{ padding-left:16px; padding-right:16px; }
+    .site-nav-inner{ padding-left:16px; padding-right:16px; }
+    .nav-links{ gap:10px; }
+    .nav-links a{ font-size:10px; }
+    .nav-status{ padding:5px 7px; font-size:8px; }
+    .hero{ padding:44px 20px; }
+    .hero h1{ font-size:41px; }
+    .hero-copy{ font-size:13px; }
+    .feature-grid{ grid-template-columns:1fr; }
+    .feature-card{ min-height:0; }
+    .steps-grid{ gap:9px; }
+    .step-card{ min-height:135px; padding:16px 13px; }
+    .step-card h3{ margin-top:19px; }
+    .tool-section .repo-panel{ padding:19px; }
+    .tool-section .pipeline{ padding:22px 18px; }
+    .footer-inner{ padding:22px 16px; }
   }
 </style>
 </head>
 <body>
 
+<nav class="site-nav" aria-label="Main navigation">
+  <div class="site-nav-inner">
+    <a class="brand" href="#home" aria-label="Sentinel home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 19 6v5c0 4.5-2.8 7.7-7 10-4.2-2.3-7-5.5-7-10V6l7-3Z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+      </span>
+      Sentinel
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How it works</a></li>
+      <li><a href="#about">About</a></li>
+      <li><a href="#try-it">Try it</a></li>
+    </ul>
+    <div class="nav-end">
+      <span class="runner-status nav-status {{ 'unsafe' if runner_status.unsafe else '' }}">{{ runner_status.label }}</span>
+      <a class="nav-try" href="#try-it">Open tool <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+</nav>
+
 <div class="wrap">
 
+  <section class="hero" id="home" aria-labelledby="hero-title">
+    <div class="hero-content">
+      <div class="hero-kicker">Evidence-first automated debugging</div>
+      <h1 id="hero-title">From a repo link to a <span>fix you can trust.</span></h1>
+      <p class="hero-copy">From GitHub URL to verified bug fix — with the evidence to trust it. Sentinel investigates failing tests, proposes focused changes, and checks whether the fix survives mutation analysis before you decide what gets applied.</p>
+      <div class="hero-actions">
+        <a class="hero-button" href="#try-it">
+          Try it now
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <span class="hero-note">Human approval stays in control.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-section" id="features" aria-labelledby="features-title">
+    <div class="section-heading">
+      <span class="section-kicker">Built for trustworthy fixes</span>
+      <h2 id="features-title">Automation with its work shown.</h2>
+      <p>Each step is designed to make the proposed change easier to inspect, verify, and own.</p>
+    </div>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">◈</div>
+        <h3>Docker sandbox isolation</h3>
+        <p>Run repository setup and test workflows in an isolated environment instead of trusting unknown code on your host.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">⌘</div>
+        <h3>Multi-agent diagnosis &amp; fix</h3>
+        <p>Focused diagnosis and patch proposals work together, with retry handling when an attempted fix does not resolve the failure.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">✓</div>
+        <h3>Mutation-verified proof</h3>
+        <p>Re-run the suite and check whether its assertions reject a targeted regression—not just whether the tests pass once.</p>
+      </article>
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">◎</div>
+        <h3>Human approval gate</h3>
+        <p>Inspect the diagnosis and complete diff before approving. Unverified proposals are clearly labeled and require manual confirmation.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="landing-section" id="how-it-works" aria-labelledby="steps-title">
+    <div class="section-heading">
+      <span class="section-kicker">A clear path from issue to evidence</span>
+      <h2 id="steps-title">How Sentinel works</h2>
+      <p>Keep the process visible from repository intake through a reviewable fix.</p>
+    </div>
+    <div class="steps-grid">
+      <article class="step-card"><span class="step-number">STEP 01</span><h3>Clone</h3><p>Start with a GitHub repository URL.</p></article>
+      <article class="step-card"><span class="step-number">STEP 02</span><h3>Detect</h3><p>Identify the project and run its available test suite.</p></article>
+      <article class="step-card"><span class="step-number">STEP 03</span><h3>Diagnose</h3><p>Trace a failure to its likely source and root cause.</p></article>
+      <article class="step-card"><span class="step-number">STEP 04</span><h3>Fix</h3><p>Prepare a focused patch and keep it staged for review.</p></article>
+      <article class="step-card"><span class="step-number">STEP 05</span><h3>Verify</h3><p>Re-test and mutation-check before human approval.</p></article>
+    </div>
+  </section>
+
+  <section class="landing-section" id="about" aria-labelledby="about-title">
+    <div class="about-card">
+      <div>
+        <span class="section-kicker">About Sentinel</span>
+        <h2 id="about-title">Trust is earned with evidence.</h2>
+        <p>Built for the IBM SkillBuild Hackathon, Sentinel explores a safer way to apply AI to software maintenance. Rather than treating a generated patch as a finished answer, the project emphasizes isolation, test evidence, transparent audit trails, and a person making the final call.</p>
+      </div>
+      <div class="about-principle">Safety and proof over blind automation.<span>Our guiding principle</span></div>
+    </div>
+  </section>
+
+  <section class="tool-section" id="try-it" aria-label="Sentinel debugging workspace">
   <header>
     <div>
       <div class="eyebrow">Automated pipeline · Groq</div>
@@ -381,6 +1002,88 @@
     </div>
     <div class="meta">RUNTIME <span>groq-api</span><br>MODE <span>diagnose → fix → verify</span></div>
   </header>
+
+  <section class="repo-panel" aria-labelledby="repo-title">
+    <div class="repo-heading">
+      <div class="eyebrow">Repository intake · Phase 1</div>
+      <h2 id="repo-title">Analyze GitHub Repo</h2>
+      <span class="runner-status {{ 'unsafe' if runner_status.unsafe else '' }}">{{ runner_status.label }}</span>
+    </div>
+    <form class="repo-form" id="repo-form">
+      <div class="repo-url-field">
+        <label for="repo-url">GitHub repository URL</label>
+        <input id="repo-url" type="url" autocomplete="url" placeholder="https://github.com/owner/repository" required>
+      </div>
+      <button id="repo-analyze-btn" type="submit">Analyze repository</button>
+    </form>
+    <p class="repo-warning">{% if runner_status.unsafe %}Local-unsafe mode runs repository installs and tests on this host. Only analyze repositories you trust.{% else %}Dependency installation runs in Docker; test execution has no network access. Git cloning remains on the host.{% endif %}</p>
+
+    <div id="repo-job" hidden aria-live="polite">
+      <div class="repo-job-head">
+        <span id="repo-stage-label">Waiting to start</span>
+        <span id="repo-job-id"></span>
+      </div>
+      <ol class="repo-steps" id="repo-steps">
+        <li data-stage="cloning">Cloning</li>
+        <li data-stage="detecting">Detecting</li>
+        <li data-stage="installing">Installing</li>
+        <li data-stage="testing">Testing</li>
+        <li data-stage="done">Done</li>
+      </ol>
+      <pre id="repo-logs"></pre>
+      <div id="repo-results" hidden>
+        <h3 id="repo-failures-title">Failing tests</h3>
+        <div class="repo-table-wrap" id="repo-failures-wrap">
+          <table class="repo-table">
+            <thead><tr><th>Test</th><th>File</th><th>Error message</th><th>Action</th></tr></thead>
+            <tbody id="repo-failures"></tbody>
+          </table>
+        </div>
+        <form id="manual-fix-form" class="manual-fix-form" hidden>
+          <h3>No tests found in this repo. Describe the bug you want fixed:</h3>
+          <label for="manual-fix-description">Bug or issue description</label>
+          <textarea id="manual-fix-description" maxlength="4000" required
+                    placeholder="Describe the incorrect behavior and what you expected instead."></textarea>
+          <label for="manual-fix-file">Suspected file path (optional)</label>
+          <input id="manual-fix-file" type="text" autocomplete="off"
+                 placeholder="src/example.py — leave blank to search by description">
+          <p class="repo-warning">This proposal will be UNVERIFIED. Sentinel will not run repository code, tests, or mutation checks.</p>
+          <button id="manual-fix-submit" type="submit">Diagnose &amp; propose unverified fix</button>
+        </form>
+        <section id="fix-panel" class="fix-panel" hidden aria-live="polite" aria-labelledby="fix-panel-title">
+          <div class="fix-panel-head">
+            <h4 id="fix-panel-title">Fix review</h4>
+            <span id="fix-state" class="fix-state">Ready</span>
+          </div>
+          <div id="unverified-warning" class="unverified-warning" role="alert" hidden>
+            ⚠️ UNVERIFIED FIX — No tests exist to confirm this works. Review the diff carefully before approving.
+          </div>
+          <p id="fix-diagnosis"></p>
+          <pre id="fix-diff"></pre>
+          <div id="fix-actions" class="fix-actions" hidden>
+            <label id="manual-review-confirm" class="manual-review-confirm" hidden>
+              <input id="manual-review-checkbox" type="checkbox">
+              I have reviewed this diff manually. I understand that this fix is unverified.
+            </label>
+            <button id="fix-approve" class="approve-btn" type="button">Approve &amp; apply</button>
+            <button id="fix-reject" class="reject-btn" type="button">Reject</button>
+            <button id="fix-export-patch" class="export-btn" type="button">Export .patch</button>
+            <button id="fix-export-branch" class="export-btn" type="button">Export local branch</button>
+          </div>
+          <textarea id="fix-reject-reason" placeholder="Rejection reason (optional)" hidden></textarea>
+          <pre id="fix-logs"></pre>
+        </section>
+        <details class="repo-report">
+          <summary>baseline_report.json</summary>
+          <pre id="repo-json"></pre>
+        </details>
+        <details class="repo-report">
+          <summary>Raw pytest JUnit XML</summary>
+          <pre id="repo-xml"></pre>
+        </details>
+      </div>
+    </div>
+  </section>
 
   <div class="pipeline">
     <div class="pipeline-row" id="pipeline-row">
@@ -447,7 +1150,18 @@
     </div>
   </div>
 
+  </section>
 </div>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand"><strong>Sentinel</strong>Open, inspect, and verify every proposed fix.</div>
+    <div class="tech-badges" aria-label="Technology stack">
+      <span>Groq</span><span>Gemini</span><span>Docker</span><span>LangGraph</span><span>CrewAI</span>
+    </div>
+    <a class="footer-link" href="https://github.com/" target="_blank" rel="noopener noreferrer">GitHub / Contact ↗</a>
+  </div>
+</footer>
 
 <script>
   const stageEls = {
@@ -565,6 +1279,334 @@
     el.className = cls;
     el.textContent = msg;
   }
+
+  const repoStages = ['cloning', 'detecting', 'installing', 'testing', 'done'];
+  const repoForm = document.getElementById('repo-form');
+  const manualFixForm = document.getElementById('manual-fix-form');
+
+  repoForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('repo-analyze-btn');
+    const jobPanel = document.getElementById('repo-job');
+    const results = document.getElementById('repo-results');
+    button.disabled = true;
+    jobPanel.hidden = false;
+    results.hidden = true;
+    document.getElementById('repo-logs').textContent = '';
+    document.getElementById('repo-failures').replaceChildren();
+    manualFixForm.hidden = true;
+    manualFixForm.reset();
+    document.getElementById('repo-stage-label').textContent = 'Submitting repository';
+    setRepoStage('cloning');
+
+    try {
+      const response = await fetch('/repo/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: document.getElementById('repo-url').value.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      document.getElementById('repo-job-id').textContent = `JOB ${data.job_id}`;
+      localStorage.setItem('sentinel:lastRepoJobId', data.job_id);
+      pollRepoJob(data.job_id);
+    } catch (error) {
+      document.getElementById('repo-stage-label').textContent = `Failed: ${error.message}`;
+      setRepoStage('failed');
+      button.disabled = false;
+    }
+  });
+
+  function setRepoStage(stage, steps = []) {
+    const failedStep = steps.find(step => step.status === 'failed');
+    const activeStage = stage === 'failed' ? (failedStep?.stage || 'cloning') : stage;
+    const current = repoStages.indexOf(activeStage);
+    document.querySelectorAll('#repo-steps li').forEach((item, index) => {
+      item.classList.remove('active', 'done', 'failed');
+      if (stage === 'failed' && index === current) item.classList.add('failed');
+      else if (index < current || stage === 'done') item.classList.add('done');
+      else if (index === current) item.classList.add('active');
+    });
+  }
+
+  async function pollRepoJob(jobId) {
+    const button = document.getElementById('repo-analyze-btn');
+    try {
+      const response = await fetch(`/repo/status/${encodeURIComponent(jobId)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      document.getElementById('repo-stage-label').textContent = `Stage: ${data.stage}`;
+      document.getElementById('repo-logs').textContent = (data.logs || []).join('\n');
+      setRepoStage(data.stage, data.steps || []);
+      if (data.stage === 'done') {
+        renderRepoReport(data.baseline_report, data.pytest_xml, jobId);
+        button.disabled = false;
+        return;
+      }
+      if (data.stage === 'failed') {
+        document.getElementById('repo-stage-label').textContent = `Failed: ${data.error || 'Intake failed'}`;
+        button.disabled = false;
+        return;
+      }
+      window.setTimeout(() => pollRepoJob(jobId), 2000);
+    } catch (error) {
+      document.getElementById('repo-stage-label').textContent = `Status unavailable: ${error.message}`;
+      if (error.message.includes('404')) localStorage.removeItem('sentinel:lastRepoJobId');
+      button.disabled = false;
+    }
+  }
+
+  function renderRepoReport(report, rawXml, jobId) {
+    const results = document.getElementById('repo-results');
+    const tbody = document.getElementById('repo-failures');
+    const fixPanel = document.getElementById('fix-panel');
+    const noTests = report.verification_mode === 'none'
+      || report.stack?.verification_mode === 'none';
+    document.querySelectorAll(
+      '#repo-steps [data-stage="installing"], #repo-steps [data-stage="testing"]',
+    ).forEach(item => { item.hidden = noTests; });
+    tbody.replaceChildren();
+    fixPanel.hidden = true;
+    document.getElementById('repo-failures-title').hidden = noTests;
+    document.getElementById('repo-failures-wrap').hidden = noTests;
+    manualFixForm.hidden = !noTests;
+    manualFixForm.dataset.jobId = jobId;
+    manualFixForm.reset();
+    document.getElementById('repo-xml').closest('details').hidden = noTests;
+    (report.failures || []).forEach((failure, failureIndex) => {
+      const row = document.createElement('tr');
+      [failure.test_id, failure.file || '', `${failure.error_type}: ${failure.message}`].forEach(value => {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+      const actionCell = document.createElement('td');
+      const fixButton = document.createElement('button');
+      fixButton.className = 'fix-row-btn';
+      fixButton.type = 'button';
+      fixButton.textContent = 'Diagnose & Fix';
+      fixButton.setAttribute('aria-label', `Diagnose and fix ${failure.test_id || `failure ${failureIndex + 1}`}`);
+      fixButton.addEventListener('click', () => startRepositoryFix(jobId, failureIndex, fixButton));
+      actionCell.appendChild(fixButton);
+      row.appendChild(actionCell);
+      tbody.appendChild(row);
+    });
+    if (!report.failures?.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.textContent = 'No failing tests.';
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    }
+    document.getElementById('repo-json').textContent = JSON.stringify(report, null, 2);
+    document.getElementById('repo-xml').textContent = rawXml || report.pytest_xml || '';
+    results.hidden = false;
+  }
+
+  manualFixForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('manual-fix-submit');
+    button.disabled = true;
+    button.textContent = 'Preparing unverified proposal…';
+    try {
+      const response = await fetch(
+        `/repo/manual-fix/${encodeURIComponent(manualFixForm.dataset.jobId)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            description: document.getElementById('manual-fix-description').value.trim(),
+            suspected_file: document.getElementById('manual-fix-file').value.trim() || undefined,
+          }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      button.textContent = 'Unverified proposal in progress…';
+      pollFixJob(data.fix_job_id, button);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Diagnose & propose unverified fix';
+      document.getElementById('repo-stage-label').textContent = `Manual fix failed: ${error.message}`;
+    }
+  });
+
+  async function startRepositoryFix(jobId, failureIndex, button) {
+    const panel = document.getElementById('fix-panel');
+    panel.hidden = false;
+    panel.className = 'fix-panel';
+    document.getElementById('fix-panel-title').textContent = 'Fix review';
+    document.getElementById('fix-state').textContent = 'Submitting';
+    document.getElementById('fix-diagnosis').textContent = '';
+    document.getElementById('fix-diff').textContent = '';
+    document.getElementById('fix-logs').textContent = 'Starting diagnosis and fix proposal…';
+    document.getElementById('fix-actions').hidden = true;
+    document.getElementById('fix-reject-reason').hidden = true;
+    document.getElementById('manual-review-confirm').hidden = true;
+    document.getElementById('manual-review-checkbox').checked = false;
+    button.disabled = true;
+    button.textContent = 'Fix in progress…';
+
+    try {
+      const response = await fetch(`/repo/fix/${encodeURIComponent(jobId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ failure_index: failureIndex }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      document.getElementById('fix-state').textContent = 'Diagnosing';
+      pollFixJob(data.fix_job_id, button);
+    } catch (error) {
+      document.getElementById('fix-state').textContent = 'Failed';
+      panel.classList.add('failed');
+      document.getElementById('fix-logs').textContent = error.message;
+      button.disabled = false;
+      button.textContent = 'Diagnose & Fix';
+    }
+  }
+
+  async function pollFixJob(fixJobId, sourceButton) {
+    const panel = document.getElementById('fix-panel');
+    try {
+      const response = await fetch(`/repo/fix/status/${encodeURIComponent(fixJobId)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      updateFixPanel(data);
+      if (['pending_review', 'done', 'rejected', 'failed'].includes(data.status)) {
+        if (sourceButton && (data.status !== 'pending_review'
+            || sourceButton.id === 'manual-fix-submit')) {
+          sourceButton.disabled = false;
+          sourceButton.textContent = sourceButton.id === 'manual-fix-submit'
+            ? 'Diagnose & propose unverified fix'
+            : 'Diagnose & Fix';
+        }
+        return;
+      }
+      window.setTimeout(() => pollFixJob(fixJobId, sourceButton), 1200);
+    } catch (error) {
+      document.getElementById('fix-state').textContent = 'Status unavailable';
+      document.getElementById('fix-logs').textContent = error.message;
+      panel.classList.add('failed');
+    }
+  }
+
+  function updateFixPanel(job) {
+    const panel = document.getElementById('fix-panel');
+    const actions = document.getElementById('fix-actions');
+    const unverified = job.verification_mode === 'unverified';
+    const pending = job.status === 'pending_review';
+    const terminal = ['done', 'rejected', 'failed'].includes(job.status);
+    panel.hidden = false;
+    panel.classList.toggle('unverified', unverified);
+    panel.classList.toggle('approved', !unverified && job.status === 'done' && job.suite_passed);
+    panel.classList.toggle('rejected', job.status === 'rejected');
+    panel.classList.toggle('failed', job.status === 'failed');
+    document.getElementById('unverified-warning').hidden = !unverified;
+    document.getElementById('fix-state').textContent = unverified
+      ? pending
+        ? 'UNVERIFIED_FIX · Manual review required'
+        : job.status === 'done'
+          ? 'UNVERIFIED_FIX · Approved; not test-verified'
+          : `UNVERIFIED_FIX · ${job.status || 'running'}`
+      : job.status === 'pending_review'
+      ? 'Awaiting your review'
+      : job.status === 'done' && job.suite_passed
+        ? 'Approved & applied'
+        : job.stage || job.status || 'Running';
+    const rootCause = job.diagnosis?.root_cause;
+    document.getElementById('fix-diagnosis').textContent = rootCause ? `Diagnosis: ${rootCause}` : (job.error || '');
+    document.getElementById('fix-diff').textContent = job.diff || '';
+    document.getElementById('fix-logs').textContent = (job.logs || []).join('\n') || (job.error || '');
+    actions.hidden = !pending && !(terminal && job.diff);
+    document.getElementById('fix-approve').hidden = !pending;
+    document.getElementById('fix-approve').disabled =
+      unverified && !document.getElementById('manual-review-checkbox').checked;
+    document.getElementById('fix-reject').hidden = !pending;
+    document.getElementById('manual-review-confirm').hidden = !unverified || !pending;
+    document.getElementById('fix-export-patch').hidden = !job.diff || (unverified && job.status !== 'done');
+    document.getElementById('fix-export-branch').hidden = !job.diff || (unverified && job.status !== 'done');
+    document.getElementById('fix-reject-reason').hidden = !pending;
+    document.getElementById('fix-panel-title').textContent =
+      `${unverified ? 'UNVERIFIED FIX' : 'Fix'} ${job.fix_job_id || ''}`;
+    document.getElementById('fix-approve').onclick = () => approveRepositoryFix(job.fix_job_id);
+    document.getElementById('fix-reject').onclick = () => rejectRepositoryFix(job.fix_job_id);
+    document.getElementById('fix-export-patch').onclick = () => exportRepositoryFix(job.fix_job_id, 'patch');
+    document.getElementById('fix-export-branch').onclick = () => exportRepositoryFix(job.fix_job_id, 'branch');
+  }
+
+  document.getElementById('manual-review-checkbox').addEventListener('change', event => {
+    document.getElementById('fix-approve').disabled = !event.target.checked;
+  });
+
+  async function approveRepositoryFix(fixJobId) {
+    const confirmed = document.getElementById('manual-review-checkbox').checked;
+    await runFixAction(fixJobId, 'approve', { manual_review_confirmed: confirmed });
+  }
+
+  async function rejectRepositoryFix(fixJobId) {
+    const reason = document.getElementById('fix-reject-reason').value.trim();
+    await runFixAction(fixJobId, 'reject', reason ? { reason } : {});
+  }
+
+  async function runFixAction(fixJobId, action, body) {
+    const response = await fetch(`/repo/fix/${encodeURIComponent(fixJobId)}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      document.getElementById('fix-state').textContent = 'Action failed';
+      document.getElementById('fix-logs').textContent = data.error || `HTTP ${response.status}`;
+      return;
+    }
+    updateFixPanel(data.job);
+    if (action === 'approve') {
+      if (data.job.verification_mode === 'unverified') {
+        document.getElementById('fix-logs').textContent =
+          'Approved and applied after manual confirmation. No tests or mutation checks were run; verdict remains UNVERIFIED_FIX.';
+      } else {
+        const counts = data.job.retest_report || {};
+        document.getElementById('fix-logs').textContent = `Full suite: ${counts.passed || 0}/${counts.total || 0} passed; ${counts.failed || 0} failed; ${counts.errors || 0} errors.`;
+      }
+    }
+  }
+
+  async function exportRepositoryFix(fixJobId, format) {
+    const response = await fetch(`/repo/fix/${encodeURIComponent(fixJobId)}/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      document.getElementById('fix-logs').textContent = data.error || `HTTP ${response.status}`;
+      return;
+    }
+    if (format === 'patch') {
+      const blob = new Blob([data.patch || ''], { type: 'text/x-diff' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${fixJobId}.patch`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      document.getElementById('fix-logs').textContent = `Patch exported to ${data.export_path}`;
+    } else {
+      document.getElementById('fix-logs').textContent = `Local branch created: ${data.branch_name} (${data.commit}). No push was performed.`;
+    }
+  }
+
+  async function restoreLastRepoJob() {
+    const jobId = localStorage.getItem('sentinel:lastRepoJobId');
+    if (!jobId) return;
+    document.getElementById('repo-job').hidden = false;
+    document.getElementById('repo-job-id').textContent = `JOB ${jobId}`;
+    pollRepoJob(jobId);
+  }
+
+  restoreLastRepoJob();
 </script>
 
 </body>
